@@ -1,0 +1,657 @@
+import { initializeApp, deleteApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getAuth, initializeAuth, inMemoryPersistence, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  signOut, reauthenticateWithCredential, EmailAuthProvider, updatePassword } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, onSnapshot, writeBatch, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { SICAM_FIREBASE } from './config.js';
+
+/* ============ Estado ============ */
+const $=s=>document.querySelector(s);
+const configurado=SICAM_FIREBASE&&SICAM_FIREBASE.apiKey&&!/COLE/i.test(SICAM_FIREBASE.apiKey);
+let app,auth,db;
+let fase=configurado?'carregando':'naoconfig'; // naoconfig | carregando | setup | login | app | erro
+let erroMsg='', loginMsg='';
+let D={users:[],tipos:[],unidades:[],reservas:[]};
+let sess=null, bootstrapping=false, unsubs=[], loaded={};
+const ui={view:null,cart:{},q:'',fs:'todos'};
+
+/* ============ Utilidades ============ */
+const DOMINIO='@sicam.apmg';
+const normLogin=s=>String(s||'').trim().toLowerCase().replace(/\s+/g,'');
+const emailDe=login=>normLogin(login)+DOMINIO;
+const nowISO=()=>new Date().toISOString();
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=iso=>{if(!iso)return'—';const d=new Date(iso);return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});};
+const toLocalInput=d=>{const p=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());};
+const nr=n=>'Nº '+String(n||0).padStart(3,'0');
+const user=id=>D.users.find(u=>u.id===id)||{nome:'?',grad:'',pelotao:'',login:''};
+const nomeM=id=>{const u=user(id);return (u.grad?u.grad+' ':'')+u.nome;};
+const tipo=id=>D.tipos.find(t=>t.id===id)||{nome:'?'};
+const unid=id=>D.unidades.find(u=>u.id===id);
+const me=()=>sess&&D.users.find(u=>u.id===sess.userId);
+const atrasada=r=>r.status==='cautelada'&&new Date(r.devolucao)<new Date();
+const entrada=(a,obs)=>({t:nowISO(),a,por:sess.userId,obs:obs||''});
+const itensTxt=r=>(r.itens||[]).map(i=>i.qtd+'× '+tipo(i.tipoId).nome).join(', ');
+const itensLi=r=>'<ul class="itens">'+(r.itens||[]).map(i=>`<li><b>${i.qtd}×</b><span>${esc(tipo(i.tipoId).nome)}</span></li>`).join('')+'</ul>';
+const ST={pendente:['Pendente','c-brass'],aprovada:['Aprovada','c-blue'],separada:['Pronta para retirada','c-blue'],
+  cautelada:['Cautelado','c-ok'],devolvida:['Devolvido','c-muted'],recusada:['Recusada','c-stamp'],cancelada:['Cancelada','c-muted']};
+const stamp=(r,lg)=>atrasada(r)?`<span class="stamp c-stamp${lg?' lg':''}">Em atraso</span>`:`<span class="stamp ${(ST[r.status]||['?',''])[1]}${lg?' lg':''}">${(ST[r.status]||[r.status])[0]}</span>`;
+
+function contagem(tipoId){
+  const c={total:0,disponivel:0,separado:0,cautelado:0,manutencao:0,extraviado:0};
+  D.unidades.forEach(u=>{if(u.tipoId===tipoId){c.total++;c[u.status]=(c[u.status]||0)+1;}});
+  c.reservado=D.reservas.filter(r=>r.status==='pendente'||r.status==='aprovada')
+    .reduce((s,r)=>s+(r.itens||[]).filter(i=>i.tipoId===tipoId).reduce((a,i)=>a+i.qtd,0),0);
+  c.livre=Math.max(0,c.disponivel-c.reservado);
+  return c;
+}
+function toast(msg,bad){const t=document.createElement('div');t.className='toast'+(bad?' bad':'');t.textContent=msg;$('#toasts').appendChild(t);setTimeout(()=>t.remove(),5500);}
+function erroFirebase(e){
+  const c=(e&&e.code)||'';
+  const m={'auth/invalid-credential':'Usuário ou senha incorretos.','auth/wrong-password':'Usuário ou senha incorretos.','auth/user-not-found':'Usuário ou senha incorretos.',
+    'auth/invalid-email':'Usuário inválido. Use só letras, números, ponto ou hífen.','auth/too-many-requests':'Muitas tentativas. Aguarde alguns minutos e tente de novo.',
+    'auth/email-already-in-use':'Já existe uma conta com esse usuário.','auth/weak-password':'A senha precisa ter pelo menos 6 caracteres.',
+    'auth/network-request-failed':'Sem conexão com a internet.','permission-denied':'Sem permissão para essa ação. Confira se as regras do Firestore foram publicadas.',
+    'unavailable':'Sem conexão com o servidor. Tente de novo.','auth/operation-not-allowed':'O login por e-mail e senha não foi ativado no Firebase (Authentication → Método de login).'};
+  return m[c]||('Erro: '+(e&&e.message||c||'desconhecido'));
+}
+async function avisar(titulo,corpo){
+  toast(titulo+(corpo?' – '+corpo:''));
+  try{navigator.vibrate&&navigator.vibrate(200);}catch(e){}
+  try{
+    if('Notification' in window&&Notification.permission==='granted'&&document.hidden){
+      const reg=await navigator.serviceWorker?.getRegistration();
+      if(reg)reg.showNotification(titulo,{body:corpo||'',icon:'icon-192.png',badge:'icon-192.png',tag:'sicam'});
+    }
+  }catch(e){}
+}
+
+const SEAL=`<svg class="seal" viewBox="0 0 54 62" fill="none" aria-hidden="true"><path d="M27 2 50 10v20c0 15-10 25-23 30C14 55 4 45 4 30V10L27 2Z" stroke="currentColor" stroke-width="3"/><path d="M16 22h22M16 30h22M16 38h14" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="m32 40 4 4 7-9" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const IC={
+  eq:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16v12H4zM9 7V5h6v2M4 12h16"/></svg>',
+  rs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6zM9 12h7M9 16h7M9 8h3"/></svg>',
+  pf:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>'
+};
+
+/* ============ Modal ============ */
+const modal=$('#modal');
+function openModal(title,body,foot,sub){
+  modal.innerHTML=`<div class="mh"><div><h2>${title}</h2>${sub?`<p class="muted small">${sub}</p>`:''}</div><button class="x" data-act="fechar" aria-label="Fechar">×</button></div>
+  <div class="mb">${body}</div>${foot?`<div class="mf">${foot}</div>`:''}`;
+  if(!modal.open)modal.showModal();
+}
+const closeModal=()=>{if(modal.open)modal.close();};
+modal.addEventListener('click',e=>{if(e.target===modal)closeModal();});
+
+/* ============ Telas de entrada ============ */
+function vNaoConfig(){
+  return `<main class="login"><div class="login-card stack">
+    <div class="brand">${SEAL}<div><h1>SICAM</h1><p>Falta ligar o app ao Firebase</p></div></div>
+    <p>Abra o arquivo <b>config.js</b> e cole ali os dados do seu projeto Firebase, como está no guia de instalação.</p></div></main>`;
+}
+function vErro(){
+  return `<main class="login"><div class="login-card stack">
+    <div class="brand">${SEAL}<div><h1>SICAM</h1><p>Não foi possível conectar</p></div></div>
+    <p class="erro">${esc(erroMsg)}</p><button class="btn btn-pri btn-block" data-act="recarregar">Tentar de novo</button></div></main>`;
+}
+function vCarregando(){return `<div class="loading"><div><div class="spin"></div>Carregando…</div></div>`;}
+function vSetup(){
+  return `<main class="login"><div class="login-card">
+    <div class="brand">${SEAL}<div><h1>SICAM</h1><p>Configuração inicial – crie a conta do Furriel</p></div></div>
+    <form id="f-setup" class="stack" autocomplete="off">
+      <p class="aviso">Esta tela só aparece uma vez. A primeira conta criada aqui será a do Furriel, que depois cadastra os demais militares.</p>
+      <div class="grid2"><label class="f"><span>Posto / graduação</span><input class="i" name="grad" value="Cad PM"></label>
+      <label class="f"><span>Nome de guerra</span><input class="i" name="nome" required></label></div>
+      <label class="f"><span>Usuário (para entrar no sistema)</span><input class="i" name="login" required autocapitalize="off" placeholder="furriel"></label>
+      <label class="f"><span>Senha (mínimo 6 caracteres)</span><input class="i" name="senha" type="password" required minlength="6"></label>
+      <label class="check"><input type="checkbox" name="exemplo" checked><span>Carregar material de exemplo (HT, capacete, colete, tonfa, capa e lanterna) para os testes</span></label>
+      <p class="erro" id="setup-erro"></p>
+      <button class="btn btn-pri btn-block">Criar conta do Furriel</button>
+    </form></div></main>`;
+}
+function vLogin(){
+  return `<main class="login"><div class="login-card">
+    <div class="brand">${SEAL}<div><h1>SICAM</h1><p>Cautela de material coletivo da Furrielação – APMG</p></div></div>
+    <form id="f-login" class="stack" autocomplete="on">
+      <label class="f"><span>Usuário (nº de aluno)</span><input class="i" name="login" required autocapitalize="off" autocomplete="username"></label>
+      <label class="f"><span>Senha</span><input class="i" name="senha" type="password" required autocomplete="current-password"></label>
+      <p class="erro" id="login-erro">${esc(loginMsg)}</p>
+      <button class="btn btn-pri btn-block">Entrar</button>
+    </form>
+    <p class="muted small" style="margin-top:1rem">Esqueceu a senha ou ainda não tem acesso? Procure a Furrielação.</p>
+  </div></main>`;
+}
+
+/* ============ App do solicitante ============ */
+function vApp(){
+  const u=me(), v=ui.view||'equip';
+  const minhas=D.reservas.filter(r=>r.userId===u.id);
+  const ativas=minhas.filter(r=>['pendente','aprovada','separada','cautelada'].includes(r.status)).length;
+  let body='', title='', sub='';
+  if(v==='equip'){title='Material disponível';sub='Escolha as quantidades e envie a solicitação ao Furriel.';body=vEquip(u);}
+  if(v==='reservas'){title='Minhas solicitações';sub='Acompanhe cada pedido até a devolução.';body=vMinhas(minhas);}
+  if(v==='perfil'){title='Meus dados';sub=esc(nomeM(u.id));body=vPerfil(u);}
+  const n=Object.values(ui.cart).reduce((a,b)=>a+b,0);
+  return `<header class="m-top"><div class="wrap"><p>${esc(nomeM(u.id))} · ${esc(u.pelotao)}</p><h1>${title}</h1><p>${sub}</p></div></header>
+  <main class="m-main">${body}</main>
+  ${v==='equip'&&n?`<div class="cartbar"><div class="in"><span>${n} ${n>1?'itens selecionados':'item selecionado'}</span><button class="btn" data-act="solicitar">Solicitar</button></div></div>`:''}
+  <nav class="bnav" aria-label="Navegação"><div class="in">
+    <button data-act="go" data-v="equip" ${v==='equip'?'aria-current="page"':''}>${IC.eq}Material</button>
+    <button data-act="go" data-v="reservas" ${v==='reservas'?'aria-current="page"':''}>${IC.rs}Solicitações${ativas?` (${ativas})`:''}</button>
+    <button data-act="go" data-v="perfil" ${v==='perfil'?'aria-current="page"':''}>${IC.pf}Perfil</button>
+  </div></nav>`;
+}
+function vEquip(u){
+  const comigo=D.reservas.filter(r=>r.userId===u.id&&r.status==='cautelada');
+  let h='';
+  if(comigo.length){
+    h+=`<div class="sec-h"><h2>Cautelado com você</h2></div>`+comigo.map(r=>`<button class="card clickable active-cautela${atrasada(r)?' late':''}" data-act="ver" data-id="${r.id}" style="margin-bottom:.6rem">
+      <div class="card-t"><div><span class="nr">${nr(r.num)}</span>${itensLi(r)}</div>${stamp(r)}</div>
+      <p class="small ${atrasada(r)?'c-stamp':'muted'}" style="margin-top:.4rem">Devolver até ${fmt(r.devolucao)}</p></button>`).join('');
+    h+=`<div class="sec-h"><h2>Material da Furrielação</h2></div>`;
+  }
+  if(!D.tipos.length)return h+'<div class="empty">Nenhum material cadastrado ainda.</div>';
+  h+='<div class="stack">'+D.tipos.map(t=>{
+    const c=contagem(t.id), q=ui.cart[t.id]||0, pct=x=>c.total?(x/c.total*100):0;
+    return `<div class="card eq">
+      <div><h3>${esc(t.nome)}</h3><p class="avail${c.livre?'':' zero'}"><b>${c.livre}</b> de ${c.total} disponíveis${t.desc?' – '+esc(t.desc):''}</p></div>
+      <div class="stepper" role="group" aria-label="Quantidade de ${esc(t.nome)}">
+        <button data-act="cart" data-id="${t.id}" data-d="-1" ${q?'':'disabled'} aria-label="Diminuir">−</button>
+        <output>${q}</output>
+        <button data-act="cart" data-id="${t.id}" data-d="1" ${q<c.livre?'':'disabled'} aria-label="Aumentar">+</button>
+      </div>
+      <div class="gauge" aria-hidden="true"><i class="g-free" style="width:${pct(c.livre)}%"></i><i class="g-res" style="width:${pct(c.reservado+c.separado)}%"></i><i class="g-out" style="width:${pct(c.cautelado)}%"></i><i class="g-man" style="width:${pct(c.manutencao+c.extraviado)}%"></i></div>
+    </div>`;}).join('')+'</div>';
+  h+=`<div class="legend"><span><i class="g-free"></i>Disponível</span><span><i class="g-res"></i>Reservado</span><span><i class="g-out"></i>Cautelado</span><span><i class="g-man"></i>Manutenção</span></div>`;
+  return h;
+}
+function cardReserva(r){
+  return `<button class="card clickable" data-act="ver" data-id="${r.id}">
+    <div class="card-t"><div><span class="nr">${nr(r.num)}</span>${itensLi(r)}</div>${stamp(r)}</div>
+    <dl class="meta"><dt>Retirada</dt><dd>${fmt(r.retirada)}</dd><dt>Devolução</dt><dd>${fmt(r.devolucao)}</dd><dt>Finalidade</dt><dd>${esc(r.finalidade)}</dd></dl>
+  </button>`;
+}
+function vMinhas(list){
+  if(!list.length)return `<div class="empty"><p>Você ainda não fez nenhuma solicitação.</p><p style="margin-top:.7rem"><button class="btn btn-pri" data-act="go" data-v="equip">Ver material disponível</button></p></div>`;
+  const ord=['separada','aprovada','pendente','cautelada'];
+  const s=[...list].sort((a,b)=>{const ia=ord.indexOf(a.status),ib=ord.indexOf(b.status);return (ia<0?9:ia)-(ib<0?9:ib)||b.num-a.num;});
+  return '<div class="stack">'+s.map(cardReserva).join('')+'</div>';
+}
+function botaoAvisos(){
+  if(!('Notification' in window))return '';
+  if(Notification.permission==='granted')return '<p class="small muted">Avisos neste aparelho: ativados.</p>';
+  if(Notification.permission==='denied')return '<p class="small muted">Avisos bloqueados neste aparelho. Libere nas configurações do navegador.</p>';
+  return '<button class="btn btn-block" data-act="avisos">Ativar avisos neste aparelho</button>';
+}
+function vPerfil(u){
+  const tot=D.reservas.filter(r=>r.userId===u.id);
+  return `<div class="card"><dl class="meta" style="margin:0">
+    <dt>Nome</dt><dd>${esc(nomeM(u.id))}</dd><dt>Usuário</dt><dd class="mono">${esc(u.login)}</dd><dt>Pelotão</dt><dd>${esc(u.pelotao)}</dd>
+    <dt>Solicitações</dt><dd>${tot.length} no total</dd></dl></div>
+    <div class="stack" style="margin-top:1rem">${botaoAvisos()}<button class="btn btn-block" data-act="senha">Trocar minha senha</button><button class="btn btn-block" data-act="sair">Sair</button></div>`;
+}
+function abrirSolicitacao(){
+  const itens=Object.entries(ui.cart).filter(([,q])=>q>0);
+  const a=new Date(Date.now()+2*3600e3);a.setMinutes(0,0,0);
+  const b=new Date(a.getTime()+24*3600e3);
+  openModal('Nova solicitação',`<form id="f-sol" class="stack">
+    <div class="ficha"><ul class="itens">${itens.map(([id,q])=>`<li><b>${q}×</b><span>${esc(tipo(id).nome)}</span></li>`).join('')}</ul></div>
+    <div class="grid2">
+      <label class="f"><span>Retirada</span><input class="i" type="datetime-local" name="ret" value="${toLocalInput(a)}" required></label>
+      <label class="f"><span>Devolução prevista</span><input class="i" type="datetime-local" name="dev" value="${toLocalInput(b)}" required></label>
+    </div>
+    <label class="f"><span>Finalidade</span><select class="i" name="fin">${['Instrução','Serviço','Policiamento / operação','Formatura / solenidade','Outra'].map(x=>`<option>${x}</option>`).join('')}</select></label>
+    <label class="f"><span>Observação (opcional)</span><textarea class="i" name="obs" placeholder="Ex.: instrução de tiro, turma B"></textarea></label>
+    <p class="erro" id="sol-erro"></p>
+    <button class="btn btn-pri btn-block">Enviar solicitação</button></form>`,'',
+    'O Furriel recebe o pedido e avisa quando o material estiver separado.');
+}
+async function enviarSolicitacao(fd){
+  const ret=new Date(fd.get('ret')), dev=new Date(fd.get('dev'));
+  if(!(dev>ret)){$('#sol-erro').textContent='A devolução precisa ser depois da retirada.';return;}
+  const itens=Object.entries(ui.cart).filter(([,q])=>q>0).map(([tipoId,qtd])=>({tipoId,qtd}));
+  for(const i of itens){const c=contagem(i.tipoId);if(i.qtd>c.livre){$('#sol-erro').textContent=`Restam só ${c.livre} de ${tipo(i.tipoId).nome}. Ajuste a quantidade.`;return;}}
+  const ref=doc(collection(db,'reservas'));
+  const r={userId:sess.userId,itens,retirada:ret.toISOString(),devolucao:dev.toISOString(),finalidade:fd.get('fin'),obs:String(fd.get('obs')||'').trim(),
+    status:'pendente',unidades:[],cond:{},log:[entrada('Solicitada')],criadoEm:nowISO()};
+  let n=0;
+  await runTransaction(db,async tx=>{
+    const cref=doc(db,'config','contador');const c=await tx.get(cref);
+    n=((c.exists()&&c.data().seq)||0)+1;tx.update(cref,{seq:n});tx.set(ref,{...r,num:n});
+  });
+  ui.cart={};ui.view='reservas';closeModal();render();toast(`Solicitação ${nr(n)} enviada ao Furriel.`);
+}
+function trocarSenha(){
+  openModal('Trocar minha senha',`<form id="f-senha" class="stack" autocomplete="off">
+    <label class="f"><span>Senha atual</span><input class="i" type="password" name="atual" required></label>
+    <label class="f"><span>Nova senha (mínimo 6 caracteres)</span><input class="i" type="password" name="nova" required minlength="6"></label>
+    <p class="erro" id="senha-erro"></p><button class="btn btn-pri btn-block">Salvar nova senha</button></form>`);
+}
+
+/* ============ Detalhe ============ */
+function verReserva(id){
+  const r=D.reservas.find(x=>x.id===id); if(!r)return;
+  const u=me(), admin=u.perfil==='furriel';
+  const passos=[['Solicitada','Solicitada'],['Aprovada','Aprovada pelo Furriel'],['Separada','Material separado'],['Cautelada','Cautela assinada'],['Devolvida','Devolvido']];
+  const log=r.log||[];const find=a=>log.find(l=>l.a===a);
+  const fim=log.find(l=>l.a==='Recusada'||l.a==='Cancelada');
+  let tl='<ol class="tl">';
+  for(const [a,label] of passos){
+    const l=find(a);
+    if(!l&&fim){tl+=`<li class="bad"><b>${fim.a}</b><span>${fmt(fim.t)} · ${esc(nomeM(fim.por))}${fim.obs?' – '+esc(fim.obs):''}</span></li>`;break;}
+    tl+=`<li class="${l?'done':''}"><b>${label}</b><span>${l?fmt(l.t)+' · '+esc(nomeM(l.por))+(l.obs?' – '+esc(l.obs):''):'—'}</span></li>`;
+  }
+  tl+='</ol>';
+  const us=r.unidades||[];
+  const pats=us.length?`<p class="small muted" style="margin-top:.7rem">Patrimônios</p><div class="row" style="margin-top:.25rem">${us.map(id=>{const x=unid(id);const cd=r.cond&&r.cond[id];
+    return `<span class="tag mono">${esc(x?x.pat:id)}${cd&&cd!=='ok'?` – ${cd==='avaria'?'avaria':'extraviado'}`:''}</span>`;}).join('')}</div>`:'';
+  const body=`<div class="ficha">${stamp(r,true)}
+    <p class="nr">${nr(r.num)}</p><p style="font-weight:600;margin-top:.1rem">${esc(nomeM(r.userId))}</p><p class="small muted">${esc(user(r.userId).pelotao||'')}</p>
+    ${itensLi(r)}
+    <dl class="meta"><dt>Retirada</dt><dd>${fmt(r.retirada)}</dd><dt>Devolução</dt><dd class="${atrasada(r)?'c-stamp':''}">${fmt(r.devolucao)}</dd><dt>Finalidade</dt><dd>${esc(r.finalidade)}</dd>${r.obs?`<dt>Obs.</dt><dd>${esc(r.obs)}</dd>`:''}</dl>
+    ${pats}</div>
+    <h3 style="margin-top:1.1rem">Andamento</h3>${tl}`;
+  let foot='';
+  if(!admin&&['pendente','aprovada'].includes(r.status))foot=`<button class="btn btn-warn" data-act="cancelar" data-id="${r.id}">Cancelar solicitação</button>`;
+  if(!admin&&r.status==='separada')foot=`<p class="small muted" style="margin-right:auto">Vá à Furrielação para assinar a cautela e retirar o material.</p>`;
+  if(admin)foot=acoesAdmin(r,true);
+  openModal('Solicitação '+nr(r.num),body,foot);
+}
+async function cancelar(id){
+  const r=R(id); if(!r||!['pendente','aprovada'].includes(r.status))return;
+  if(!confirm('Cancelar esta solicitação?'))return;
+  await updateDoc(doc(db,'reservas',id),{status:'cancelada',log:[...r.log,entrada('Cancelada','Pelo solicitante')]});
+  closeModal();toast(`Solicitação ${nr(r.num)} cancelada.`);
+}
+
+/* ============ Painel do Furriel ============ */
+const NAV=[['painel','Painel'],['solic','Solicitações'],['ativas','Cautelas ativas'],['material','Material'],['militares','Militares'],['hist','Histórico']];
+function vAdmin(){
+  const v=ui.view||'painel';
+  const pend=D.reservas.filter(r=>r.status==='pendente').length;
+  const late=D.reservas.filter(atrasada).length;
+  document.title=(pend?`(${pend}) `:'')+'SICAM – Furrielação';
+  const views={painel:vPainel,solic:vSolic,ativas:vAtivas,material:vMaterial,militares:vMilitares,hist:vHist};
+  return `<div class="shell"><nav class="side" aria-label="Menu do Furriel">
+    <div class="brand">${SEAL}<div><h1>SICAM</h1><p>Furrielação APMG</p></div></div>
+    ${NAV.map(([k,l])=>`<button class="nav-b" data-act="go" data-v="${k}" ${v===k?'aria-current="page"':''}><span>${l}</span>${k==='solic'&&pend?`<span class="badge">${pend}</span>`:''}${k==='ativas'&&late?`<span class="badge red">${late}</span>`:''}</button>`).join('')}
+    <div class="foot"><div class="who">${esc(nomeM(sess.userId))}</div>
+      <button class="nav-b" data-act="senha">Trocar senha</button>
+      <button class="nav-b" data-act="sair">Sair</button></div>
+  </nav><main class="a-main">${views[v]()}</main></div>`;
+}
+function acoesAdmin(r,inModal){
+  const cls='btn'+(inModal?'':' btn-sm');
+  if(r.status==='pendente')return `<button class="${cls} btn-warn" data-act="recusar" data-id="${r.id}">Recusar</button><button class="${cls} btn-pri" data-act="aprovar" data-id="${r.id}">Aprovar</button>`;
+  if(r.status==='aprovada')return `<button class="${cls} btn-pri" data-act="separar" data-id="${r.id}">Separar material</button>`;
+  if(r.status==='separada')return `<button class="${cls} btn-pri" data-act="cautelar" data-id="${r.id}">Efetivar cautela</button>`;
+  if(r.status==='cautelada')return `<button class="${cls} btn-pri" data-act="devolver" data-id="${r.id}">Registrar devolução</button>`;
+  return inModal?`<button class="btn" data-act="fechar">Fechar</button>`:'';
+}
+function cardAdmin(r){
+  return `<div class="card">
+    <button class="clickable" style="background:none;border:0;padding:0" data-act="ver" data-id="${r.id}">
+      <div class="card-t"><div><span class="nr">${nr(r.num)}</span><p style="font-weight:600">${esc(nomeM(r.userId))}</p></div>${stamp(r)}</div>
+      ${itensLi(r)}
+      <dl class="meta"><dt>Retirada</dt><dd>${fmt(r.retirada)}</dd><dt>Devolução</dt><dd class="${atrasada(r)?'c-stamp':''}">${fmt(r.devolucao)}</dd><dt>Finalidade</dt><dd>${esc(r.finalidade)}</dd></dl>
+    </button>
+    <div class="row" style="margin-top:.7rem;justify-content:flex-end">${acoesAdmin(r)}</div></div>`;
+}
+function vPainel(){
+  const Rs=D.reservas, c=s=>Rs.filter(r=>r.status===s).length;
+  const late=Rs.filter(atrasada).length;
+  const feed=Rs.flatMap(r=>(r.log||[]).map(l=>({...l,r}))).sort((a,b)=>b.t.localeCompare(a.t)).slice(0,8);
+  return `<div class="a-head"><div><h1>Painel</h1><p>${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</p></div><div style="min-width:220px">${botaoAvisos()}</div></div>
+  <div class="kpis">
+    <button class="kpi" data-act="go" data-v="solic"><strong>${c('pendente')}</strong><span>aguardando aprovação</span></button>
+    <button class="kpi" data-act="go" data-v="solic"><strong>${c('aprovada')+c('separada')}</strong><span>a separar ou retirar</span></button>
+    <button class="kpi" data-act="go" data-v="ativas"><strong>${c('cautelada')}</strong><span>cautelas ativas</span></button>
+    <button class="kpi${late?' alert':''}" data-act="go" data-v="ativas"><strong>${late}</strong><span>com devolução em atraso</span></button>
+  </div>
+  <div class="two">
+    <section><div class="sec-h"><h2>Situação do material</h2></div>
+      ${D.tipos.length?`<div class="tbl-wrap"><table><thead><tr><th>Material</th><th>Livre</th><th>Fora</th><th>Manut.</th><th style="width:40%">Distribuição</th></tr></thead><tbody>
+      ${D.tipos.map(t=>{const k=contagem(t.id),p=x=>k.total?x/k.total*100:0;
+        return `<tr><td>${esc(t.nome)}</td><td>${k.livre}/${k.total}</td><td>${k.cautelado}</td><td>${k.manutencao+k.extraviado}</td>
+        <td><div class="bar"><i class="g-free" style="width:${p(k.livre)}%"></i><i class="g-res" style="width:${p(k.reservado+k.separado)}%"></i><i class="g-out" style="width:${p(k.cautelado)}%"></i><i class="g-man" style="width:${p(k.manutencao+k.extraviado)}%"></i></div></td></tr>`;}).join('')}
+      </tbody></table></div>
+      <div class="legend"><span><i class="g-free"></i>Disponível</span><span><i class="g-res"></i>Reservado / separado</span><span><i class="g-out"></i>Cautelado</span><span><i class="g-man"></i>Manutenção / extraviado</span></div>`
+      :`<div class="empty"><p>Nenhum material cadastrado.</p><p style="margin-top:.6rem"><button class="btn btn-pri" data-act="go" data-v="material">Cadastrar material</button></p></div>`}
+    </section>
+    <section><div class="sec-h"><h2>Últimos registros</h2></div><div class="card"><ul class="feed">
+      ${feed.map(l=>`<li><time>${fmt(l.t)}</time>${nr(l.r.num)} ${esc(l.a.toLowerCase())} – ${esc(nomeM(l.r.userId))}</li>`).join('')||'<li class="muted">Nenhum registro ainda.</li>'}
+    </ul></div></section>
+  </div>`;
+}
+function vSolic(){
+  const col=(s,t,help)=>{const l=D.reservas.filter(r=>r.status===s).sort((a,b)=>a.retirada.localeCompare(b.retirada));
+    return `<section class="col"><div class="col-h"><h3>${t}</h3><span class="tag">${l.length}</span></div>
+    ${l.length?l.map(cardAdmin).join(''):`<div class="empty small">${help}</div>`}</section>`;};
+  return `<div class="a-head"><div><h1>Solicitações</h1><p>Cada pedido avança da esquerda para a direita. Ordenado pela hora de retirada.</p></div></div>
+  <div class="cols">${col('pendente','Aguardando aprovação','Nenhum pedido novo.')}${col('aprovada','Aprovadas – separar','Nada para separar.')}${col('separada','Prontas – cautelar','Ninguém aguardando retirada.')}</div>`;
+}
+function vAtivas(){
+  const l=D.reservas.filter(r=>r.status==='cautelada').sort((a,b)=>a.devolucao.localeCompare(b.devolucao));
+  return `<div class="a-head"><div><h1>Cautelas ativas</h1><p>Material fora da Furrielação, pela ordem de devolução prevista.</p></div></div>
+  ${l.length?`<div class="tbl-wrap"><table><thead><tr><th>Nº</th><th>Militar</th><th>Material</th><th>Patrimônios</th><th>Devolução</th><th>Situação</th><th></th></tr></thead><tbody>
+  ${l.map(r=>`<tr class="hov" data-act="ver" data-id="${r.id}"><td class="mono">${nr(r.num)}</td><td>${esc(nomeM(r.userId))}</td><td>${esc(itensTxt(r))}</td>
+  <td class="mono">${(r.unidades||[]).map(id=>esc(unid(id)?.pat||'')).join(', ')}</td><td class="${atrasada(r)?'c-stamp':''}">${fmt(r.devolucao)}</td><td>${stamp(r)}</td>
+  <td><button class="btn btn-sm btn-pri" data-act="devolver" data-id="${r.id}">Registrar devolução</button></td></tr>`).join('')}</tbody></table></div>`
+  :'<div class="empty">Todo o material está na Furrielação.</div>'}`;
+}
+const USTAT={disponivel:['Disponível','var(--ok)'],separado:['Separado','var(--brass)'],cautelado:['Cautelado','var(--blue)'],manutencao:['Manutenção','var(--stamp)'],extraviado:['Extraviado','var(--stamp)']};
+function vMaterial(){
+  return `<div class="a-head"><div><h1>Material</h1><p>Tipos de material e cada unidade com seu nº de patrimônio.</p></div><button class="btn btn-pri" data-act="novoTipo">Cadastrar material</button></div>
+  ${D.tipos.map(t=>{const k=contagem(t.id);const us=D.unidades.filter(u=>u.tipoId===t.id);
+    return `<details class="tipo" data-tipo="${t.id}" ${ui.aberto===t.id?'open':''}><summary><div><h3>${esc(t.nome)}</h3><p class="small muted">${esc(t.desc||'')}</p></div>
+      <div class="row small"><span class="tag">${k.disponivel} disp.</span><span class="tag">${k.cautelado} caut.</span>${k.manutencao?`<span class="tag c-stamp">${k.manutencao} manut.</span>`:''}<span class="tag">${k.total} total</span></div></summary>
+      <div class="body"><div class="units">${us.map(u=>`<div class="unit"><span class="mono"><span class="dot" style="background:${(USTAT[u.status]||['','var(--muted)'])[1]}"></span>${esc(u.pat)}</span>
+        ${['separado','cautelado'].includes(u.status)?`<span class="small muted">${USTAT[u.status][0]}</span>`:
+        `<select data-chg="ustat" data-id="${u.id}" aria-label="Situação de ${esc(u.pat)}">${['disponivel','manutencao','extraviado'].map(s=>`<option value="${s}" ${u.status===s?'selected':''}>${USTAT[s][0]}</option>`).join('')}</select>`}</div>`).join('')}</div>
+        <div class="row" style="margin-top:.8rem"><button class="btn btn-sm" data-act="novaUnid" data-id="${t.id}">Adicionar unidade</button></div></div></details>`;}).join('')||'<div class="empty">Cadastre o primeiro material.</div>'}`;
+}
+function vMilitares(){
+  const l=[...D.users].sort((a,b)=>(a.perfil===b.perfil?0:a.perfil==='furriel'?-1:1)||a.nome.localeCompare(b.nome));
+  return `<div class="a-head"><div><h1>Militares</h1><p>Quem pode entrar no sistema e solicitar material.</p></div><button class="btn btn-pri" data-act="novoUser">Cadastrar militar</button></div>
+  <div class="tbl-wrap"><table><thead><tr><th>Nome</th><th>Usuário</th><th>Pelotão</th><th>Perfil</th><th>Cautelas ativas</th><th></th></tr></thead><tbody>
+  ${l.map(u=>{const at=D.reservas.filter(r=>r.userId===u.id&&r.status==='cautelada').length;
+    return `<tr><td>${esc(nomeM(u.id))}${u.ativo?'':' <span class="tag c-muted">desativado</span>'}</td><td class="mono">${esc(u.login)}</td><td>${esc(u.pelotao)}</td>
+    <td>${u.perfil==='furriel'?'Furriel':'Solicitante'}</td><td>${at||'—'}</td>
+    <td>${u.id===sess.userId?'':`<button class="btn btn-sm" data-act="toggleUser" data-id="${u.id}">${u.ativo?'Desativar':'Reativar'}</button>`}</td></tr>`;}).join('')}
+  </tbody></table></div>
+  <p class="small muted" style="margin-top:.8rem">Se um militar esquecer a senha: desative o usuário antigo e cadastre de novo com outro usuário (ex.: 101b). A troca de senha pelo Furriel entra numa próxima versão.</p>`;
+}
+function histFiltrado(){
+  const q=ui.q.trim().toLowerCase();
+  return D.reservas.filter(r=>(ui.fs==='todos'||(ui.fs==='atraso'?atrasada(r):r.status===ui.fs))&&
+    (!q||(nomeM(r.userId)+' '+itensTxt(r)+' '+nr(r.num)+' '+(r.unidades||[]).map(id=>unid(id)?.pat).join(' ')).toLowerCase().includes(q)))
+    .sort((a,b)=>b.num-a.num);
+}
+function vHist(){
+  return `<div class="a-head"><div><h1>Histórico</h1><p>Todas as solicitações e cautelas registradas.</p></div><button class="btn" data-act="csv">Baixar planilha (CSV)</button></div>
+  <div class="filters"><input class="i" type="search" placeholder="Buscar militar, material ou patrimônio" value="${esc(ui.q)}" data-inp="q" aria-label="Buscar">
+  <select class="i" data-chg="fs" aria-label="Filtrar situação"><option value="todos">Todas as situações</option>${Object.entries(ST).map(([k,[t]])=>`<option value="${k}" ${ui.fs===k?'selected':''}>${t}</option>`).join('')}<option value="atraso" ${ui.fs==='atraso'?'selected':''}>Em atraso</option></select></div>
+  <div id="hist-t">${tabHist(histFiltrado())}</div>`;
+}
+function tabHist(l){
+  return l.length?`<div class="tbl-wrap"><table><thead><tr><th>Nº</th><th>Militar</th><th>Material</th><th>Retirada</th><th>Devolução</th><th>Situação</th></tr></thead><tbody>
+  ${l.map(r=>`<tr class="hov" data-act="ver" data-id="${r.id}"><td class="mono">${nr(r.num)}</td><td>${esc(nomeM(r.userId))}</td><td>${esc(itensTxt(r))}</td><td>${fmt(r.retirada)}</td><td>${fmt(r.devolucao)}</td><td>${stamp(r)}</td></tr>`).join('')}
+  </tbody></table></div>`:'<div class="empty">Nenhum registro com esse filtro.</div>';
+}
+
+/* ============ Ações do Furriel ============ */
+const R=id=>D.reservas.find(x=>x.id===id);
+async function aprovar(id){const r=R(id);if(!r||r.status!=='pendente')return;
+  await updateDoc(doc(db,'reservas',id),{status:'aprovada',log:[...r.log,entrada('Aprovada')]});closeModal();toast(`${nr(r.num)} aprovada. Próximo passo: separar o material.`);}
+function recusar(id){
+  const r=R(id);if(!r)return;
+  openModal('Recusar '+nr(r.num),`<form id="f-rec" data-id="${r.id}" class="stack"><p>${esc(nomeM(r.userId))} – ${esc(itensTxt(r))}</p>
+    <label class="f"><span>Motivo (o militar verá esta mensagem)</span><textarea class="i" name="m" required placeholder="Ex.: material já destinado à instrução do 2º Pelotão"></textarea></label>
+    <button class="btn btn-warn btn-block">Recusar solicitação</button></form>`);
+}
+function separar(id){
+  const r=R(id);if(!r)return;
+  let body=`<form id="f-sep" data-id="${r.id}"><p class="muted small">Marque os patrimônios que vão ser entregues. Já deixamos os primeiros disponíveis marcados.</p>`;
+  for(const i of r.itens){
+    const disp=D.unidades.filter(u=>u.tipoId===i.tipoId&&u.status==='disponivel');
+    body+=`<h3 style="margin-top:.9rem">${esc(tipo(i.tipoId).nome)} <span class="muted small">– selecione ${i.qtd}</span></h3>
+    <div class="pick" data-tipo="${i.tipoId}" data-q="${i.qtd}">${disp.map((u,k)=>`<label><input type="checkbox" name="u" value="${u.id}" ${k<i.qtd?'checked':''}><span class="mono">${esc(u.pat)}</span></label>`).join('')||'<p class="c-stamp small">Nenhuma unidade disponível.</p>'}</div>`;
+  }
+  body+=`<p class="erro" id="sep-erro"></p><button class="btn btn-pri btn-block">Confirmar separação</button></form>`;
+  openModal('Separar material – '+nr(r.num),body,'',esc(nomeM(r.userId))+' · retirada '+fmt(r.retirada));
+}
+async function confirmarSeparacao(form){
+  const r=R(form.dataset.id);const sel=[];
+  for(const g of form.querySelectorAll('.pick')){
+    const ch=[...g.querySelectorAll('input:checked')].map(x=>x.value);
+    if(ch.length!==+g.dataset.q){$('#sep-erro').textContent=`Em ${tipo(g.dataset.tipo).nome}, marque exatamente ${g.dataset.q}.`;return;}
+    sel.push(...ch);
+  }
+  try{
+    await runTransaction(db,async tx=>{
+      const snaps=await Promise.all(sel.map(id=>tx.get(doc(db,'unidades',id))));
+      if(snaps.some(s=>!s.exists()||s.data().status!=='disponivel'))throw {code:'mudou'};
+      sel.forEach(id=>tx.update(doc(db,'unidades',id),{status:'separado'}));
+      tx.update(doc(db,'reservas',r.id),{status:'separada',unidades:sel,log:[...r.log,entrada('Separada')]});
+    });
+  }catch(e){if(e&&e.code==='mudou'){$('#sep-erro').textContent='Uma das unidades acabou de mudar de situação. Feche e abra de novo.';return;}throw e;}
+  closeModal();toast(`${nr(r.num)} separada. O militar já vê que o material está pronto.`);
+}
+function cautelar(id){
+  const r=R(id);if(!r)return;
+  openModal('Efetivar cautela – '+nr(r.num),`<form id="f-caut" data-id="${r.id}" class="stack" autocomplete="off">
+    <div class="ficha"><p style="font-weight:600">${esc(nomeM(r.userId))}</p><p class="small muted">${esc(user(r.userId).pelotao)}</p>
+      <ul class="itens">${r.unidades.map(uid=>{const u=unid(uid)||{pat:'?'};return `<li><span class="mono">${esc(u.pat)}</span><span>${esc(tipo(u.tipoId).nome)}</span></li>`;}).join('')}</ul>
+      <dl class="meta"><dt>Devolver até</dt><dd>${fmt(r.devolucao)}</dd></dl></div>
+    <p class="small">O militar confere o material na sua frente e digita a própria senha. Isso substitui a assinatura no livro.</p>
+    <label class="f"><span>Senha de ${esc(nomeM(r.userId))}</span><input class="i" type="password" name="s" required autocomplete="new-password"></label>
+    <p class="erro" id="caut-erro"></p>
+    <button class="btn btn-pri btn-block">Assinar e entregar material</button></form>`);
+}
+async function comAuthSecundario(fn){
+  const app2=initializeApp(SICAM_FIREBASE,'sec-'+Date.now());
+  const a2=initializeAuth(app2,{persistence:inMemoryPersistence});
+  try{return await fn(a2);}finally{try{await signOut(a2);}catch(e){} try{await deleteApp(app2);}catch(e){}}
+}
+async function confirmarCautela(form,fd){
+  const r=R(form.dataset.id);
+  try{await comAuthSecundario(a2=>signInWithEmailAndPassword(a2,emailDe(user(r.userId).login),fd.get('s')));}
+  catch(e){$('#caut-erro').textContent=e.code==='auth/too-many-requests'?erroFirebase(e):'Senha incorreta. Peça ao militar para digitar de novo.';return;}
+  const b=writeBatch(db);
+  r.unidades.forEach(id=>b.update(doc(db,'unidades',id),{status:'cautelado'}));
+  b.update(doc(db,'reservas',r.id),{status:'cautelada',log:[...r.log,entrada('Cautelada','Assinada com senha do militar')]});
+  await b.commit();closeModal();toast(`Cautela ${nr(r.num)} registrada.`);
+}
+function devolver(id){
+  const r=R(id);if(!r)return;
+  openModal('Registrar devolução – '+nr(r.num),`<form id="f-dev" data-id="${r.id}" class="stack">
+    <p>${esc(nomeM(r.userId))}${atrasada(r)?` <span class="stamp c-stamp">Em atraso</span>`:''}</p>
+    <div class="ficha">${r.unidades.map(uid=>{const u=unid(uid)||{pat:'?',id:uid};return `<div class="dev-row"><div><span class="mono">${esc(u.pat)}</span> <span class="small muted">${esc(tipo(u.tipoId).nome)}</span></div>
+      <select class="i" name="c_${uid}" style="width:auto"><option value="ok">Em condições</option><option value="avaria">Com avaria</option><option value="extraviado">Extraviado</option></select></div>`;}).join('')}</div>
+    <label class="f"><span>Observação (opcional)</span><textarea class="i" name="obs" placeholder="Ex.: HT-002 devolvido sem bateria"></textarea></label>
+    <p class="small muted">Material com avaria vai para manutenção e sai da lista de disponíveis.</p>
+    <button class="btn btn-pri btn-block">Confirmar devolução</button></form>`);
+}
+async function confirmarDevolucao(form,fd){
+  const r=R(form.dataset.id);const cond={};let prob=0;const b=writeBatch(db);
+  r.unidades.forEach(id=>{const c=fd.get('c_'+id)||'ok';cond[id]=c;if(c!=='ok')prob++;
+    b.update(doc(db,'unidades',id),{status:c==='ok'?'disponivel':c==='avaria'?'manutencao':'extraviado'});});
+  const obs=String(fd.get('obs')||'').trim()||(prob?`${prob} item(ns) com alteração`:'Todos em condições');
+  b.update(doc(db,'reservas',r.id),{status:'devolvida',cond,log:[...r.log,entrada('Devolvida',obs)]});
+  await b.commit();closeModal();toast(`Devolução de ${nr(r.num)} registrada.`,prob>0);
+}
+function novoTipo(){
+  openModal('Cadastrar material',`<form id="f-tipo" class="stack">
+    <label class="f"><span>Nome</span><input class="i" name="nome" required placeholder="Ex.: Escudo balístico"></label>
+    <label class="f"><span>Descrição (opcional)</span><input class="i" name="desc" placeholder="Ex.: Nível IIIA, com alça"></label>
+    <div class="grid2"><label class="f"><span>Prefixo do patrimônio</span><input class="i" name="pre" required maxlength="5" placeholder="ESC"></label>
+    <label class="f"><span>Quantidade de unidades</span><input class="i" name="q" type="number" min="1" max="300" value="1" required></label></div>
+    <p class="small muted">As unidades recebem números automáticos (ex.: ESC-001, ESC-002). Se o item tiver patrimônio oficial, ajuste depois com "Adicionar unidade".</p>
+    <button class="btn btn-pri btn-block">Cadastrar</button></form>`);
+}
+function novoUser(){
+  openModal('Cadastrar militar',`<form id="f-user" class="stack" autocomplete="off">
+    <div class="grid2"><label class="f"><span>Posto / graduação</span><input class="i" name="grad" value="Cad PM"></label>
+    <label class="f"><span>Nome de guerra</span><input class="i" name="nome" required></label></div>
+    <div class="grid2"><label class="f"><span>Usuário (nº de aluno)</span><input class="i" name="login" required autocapitalize="off" pattern="[A-Za-z0-9._\\-]+" title="Só letras, números, ponto ou hífen"></label>
+    <label class="f"><span>Pelotão / setor</span><input class="i" name="pel" value="1º Pelotão"></label></div>
+    <div class="grid2"><label class="f"><span>Perfil</span><select class="i" name="perfil"><option value="aluno">Solicitante</option><option value="furriel">Furriel</option></select></label>
+    <label class="f"><span>Senha inicial (mín. 6)</span><input class="i" name="senha" required minlength="6"></label></div>
+    <p class="small muted">Passe o usuário e a senha inicial ao militar. Ele pode trocar a senha em Perfil.</p>
+    <p class="erro" id="user-erro"></p>
+    <button class="btn btn-pri btn-block">Cadastrar</button></form>`);
+}
+async function carregarExemplo(){
+  const tipos=[['HT (rádio transceptor)','HT',8,'Rádio portátil com bateria e carregador'],['Capacete balístico','CAP',10,'Nível IIIA, com jugular'],
+    ['Colete balístico','COL',12,'Tamanhos M e G'],['Tonfa','TON',15,'Policarbonato, com porta-tonfa'],['Capa de chuva','CPC',20,'Modelo ostensivo'],['Lanterna tática','LAN',6,'Com pilhas reserva']];
+  const b=writeBatch(db);
+  tipos.forEach(([nome,pre,q,desc],i)=>{const id='ex'+i;b.set(doc(db,'tipos',id),{nome,prefixo:pre,desc,ordem:i});
+    for(let k=1;k<=q;k++)b.set(doc(db,'unidades',id+'_'+k),{tipoId:id,pat:pre+'-'+String(k).padStart(3,'0'),status:'disponivel'});});
+  await b.commit();
+}
+
+/* ============ Exportar CSV ============ */
+function exportarCSV(){
+  const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const when=(r,a)=>{const l=(r.log||[]).find(x=>x.a===a);return l?fmt(l.t):'';};
+  const rows=[['Nº','Militar','Pelotão','Material','Patrimônios','Finalidade','Retirada prevista','Devolução prevista','Situação','Solicitada','Cautelada','Devolvida','Observação']]
+    .concat([...D.reservas].sort((a,b)=>a.num-b.num).map(r=>[nr(r.num),nomeM(r.userId),user(r.userId).pelotao,itensTxt(r),(r.unidades||[]).map(id=>unid(id)?.pat).join(' '),r.finalidade,fmt(r.retirada),fmt(r.devolucao),
+      atrasada(r)?'Em atraso':(ST[r.status]||[r.status])[0],when(r,'Solicitada'),when(r,'Cautelada'),when(r,'Devolvida'),((r.log||[]).find(l=>l.a==='Devolvida'||l.a==='Recusada')||{}).obs||r.obs]));
+  const csv='\ufeff'+rows.map(r=>r.map(q).join(';')).join('\r\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download='sicam-historico-'+new Date().toISOString().slice(0,10)+'.csv';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
+}
+
+/* ============ Eventos ============ */
+const acts={
+  go:el=>{ui.view=el.dataset.v;render();window.scrollTo(0,0);},
+  fechar:closeModal,
+  recarregar:()=>location.reload(),
+  sair:async()=>{closeModal();ui.view=null;ui.cart={};await signOut(auth);},
+  senha:trocarSenha,
+  avisos:async()=>{try{await Notification.requestPermission();}catch(e){}render();},
+  cart:el=>{const id=el.dataset.id,c=contagem(id);ui.cart[id]=Math.max(0,Math.min(c.livre,(ui.cart[id]||0)+(+el.dataset.d)));render();},
+  solicitar:abrirSolicitacao,
+  ver:el=>verReserva(el.dataset.id),
+  cancelar:el=>cancelar(el.dataset.id),
+  aprovar:el=>aprovar(el.dataset.id), recusar:el=>recusar(el.dataset.id), separar:el=>separar(el.dataset.id),
+  cautelar:el=>cautelar(el.dataset.id), devolver:el=>devolver(el.dataset.id),
+  novoTipo, novoUser,
+  novaUnid:async el=>{const t=tipo(el.dataset.id);const n=D.unidades.filter(u=>u.tipoId===t.id).length+1;
+    const pat=prompt('Nº de patrimônio da nova unidade',(t.prefixo||'UN')+'-'+String(n).padStart(3,'0'));if(!pat)return;
+    if(D.unidades.some(u=>u.pat.toLowerCase()===pat.trim().toLowerCase())){toast('Esse patrimônio já está cadastrado.',true);return;}
+    ui.aberto=t.id;await setDoc(doc(collection(db,'unidades')),{tipoId:t.id,pat:pat.trim(),status:'disponivel'});toast(`${pat.trim()} adicionado a ${t.nome}.`);},
+  toggleUser:async el=>{const u=user(el.dataset.id);await updateDoc(doc(db,'users',u.id),{ativo:!u.ativo});},
+  csv:exportarCSV
+};
+document.addEventListener('click',async e=>{
+  const el=e.target.closest('[data-act]');if(!el)return;
+  const f=acts[el.dataset.act];if(!f)return;
+  e.preventDefault();
+  try{await f(el);}catch(err){console.error(err);toast(erroFirebase(err),true);}
+});
+document.addEventListener('toggle',e=>{if(e.target.matches&&e.target.matches('details.tipo')&&e.target.open)ui.aberto=e.target.dataset.tipo;},true);
+
+const forms={
+  'f-login':async fd=>{loginMsg='';
+    try{await signInWithEmailAndPassword(auth,emailDe(fd.get('login')),fd.get('senha'));}
+    catch(e){$('#login-erro').textContent=erroFirebase(e);}},
+  'f-setup':async fd=>{
+    const login=normLogin(fd.get('login'));
+    if(!/^[a-z0-9._-]+$/.test(login)){$('#setup-erro').textContent='Usuário só pode ter letras, números, ponto ou hífen.';return;}
+    bootstrapping=true;
+    try{
+      const cred=await createUserWithEmailAndPassword(auth,emailDe(login),fd.get('senha'));
+      const uid=cred.user.uid;
+      const b=writeBatch(db);
+      b.set(doc(db,'users',uid),{login,nome:String(fd.get('nome')).trim(),grad:String(fd.get('grad')).trim(),pelotao:'Furrielação',perfil:'furriel',ativo:true,criadoEm:nowISO()});
+      b.set(doc(db,'config','setup'),{feito:true,em:nowISO(),por:uid});
+      b.set(doc(db,'config','contador'),{seq:0});
+      await b.commit();
+      if(fd.get('exemplo'))await carregarExemplo();
+      bootstrapping=false;await aoMudarLogin(auth.currentUser);
+    }catch(e){bootstrapping=false;$('#setup-erro').textContent=erroFirebase(e);}
+  },
+  'f-sol':fd=>enviarSolicitacao(fd),
+  'f-rec':async(fd,f)=>{const r=R(f.dataset.id);await updateDoc(doc(db,'reservas',r.id),{status:'recusada',log:[...r.log,entrada('Recusada',String(fd.get('m')).trim())]});closeModal();toast(`${nr(r.num)} recusada.`);},
+  'f-sep':(fd,f)=>confirmarSeparacao(f),
+  'f-caut':(fd,f)=>confirmarCautela(f,fd),
+  'f-dev':(fd,f)=>confirmarDevolucao(f,fd),
+  'f-tipo':async fd=>{const tref=doc(collection(db,'tipos')),pre=String(fd.get('pre')).trim().toUpperCase();
+    const q=Math.max(1,Math.min(300,+fd.get('q')||1));const b=writeBatch(db);
+    b.set(tref,{nome:String(fd.get('nome')).trim(),prefixo:pre,desc:String(fd.get('desc')||'').trim(),ordem:D.tipos.length});
+    for(let k=1;k<=q;k++)b.set(doc(db,'unidades',tref.id+'_'+k),{tipoId:tref.id,pat:pre+'-'+String(k).padStart(3,'0'),status:'disponivel'});
+    await b.commit();closeModal();toast('Material cadastrado.');},
+  'f-user':async fd=>{
+    const login=normLogin(fd.get('login'));
+    if(!/^[a-z0-9._-]+$/.test(login)){$('#user-erro').textContent='Usuário só pode ter letras, números, ponto ou hífen.';return;}
+    if(D.users.some(u=>u.login===login)){$('#user-erro').textContent='Já existe um militar com esse usuário.';return;}
+    let novo;
+    try{novo=await comAuthSecundario(async a2=>(await createUserWithEmailAndPassword(a2,emailDe(login),String(fd.get('senha')))).user.uid);}
+    catch(e){$('#user-erro').textContent=erroFirebase(e);return;}
+    await setDoc(doc(db,'users',novo),{login,nome:String(fd.get('nome')).trim(),grad:String(fd.get('grad')).trim(),pelotao:String(fd.get('pel')).trim(),perfil:fd.get('perfil'),ativo:true,criadoEm:nowISO()});
+    closeModal();toast(`Militar cadastrado. Usuário: ${login}`);},
+  'f-senha':async fd=>{
+    try{const u=auth.currentUser;await reauthenticateWithCredential(u,EmailAuthProvider.credential(u.email,fd.get('atual')));await updatePassword(u,String(fd.get('nova')));closeModal();toast('Senha alterada.');}
+    catch(e){$('#senha-erro').textContent=(e.code==='auth/invalid-credential'||e.code==='auth/wrong-password')?'Senha atual incorreta.':erroFirebase(e);}
+  }
+};
+document.addEventListener('submit',async e=>{
+  const f=forms[e.target.id];if(!f)return;e.preventDefault();
+  const btn=e.target.querySelector('button:not([type=button])');if(btn){if(btn.disabled)return;btn.disabled=true;}
+  try{await f(new FormData(e.target),e.target);}catch(err){console.error(err);toast(erroFirebase(err),true);}
+  finally{if(btn&&btn.isConnected)btn.disabled=false;}
+});
+document.addEventListener('change',async e=>{
+  const k=e.target.dataset&&e.target.dataset.chg;if(!k)return;
+  if(k==='ustat'){try{ui.aberto=unid(e.target.dataset.id)?.tipoId;await updateDoc(doc(db,'unidades',e.target.dataset.id),{status:e.target.value});}catch(err){toast(erroFirebase(err),true);}}
+  if(k==='fs'){ui.fs=e.target.value;$('#hist-t').innerHTML=tabHist(histFiltrado());}
+});
+document.addEventListener('input',e=>{if(e.target.dataset&&e.target.dataset.inp==='q'){ui.q=e.target.value;$('#hist-t').innerHTML=tabHist(histFiltrado());}});
+
+/* ============ Firebase: sessão e dados ao vivo ============ */
+function pararEscutas(){unsubs.forEach(u=>{try{u();}catch(e){}});unsubs=[];loaded={};}
+function escutarTudo(){
+  const cols=['users','tipos','unidades','reservas'];
+  cols.forEach(nome=>{
+    const un=onSnapshot(collection(db,nome),snap=>{
+      const primeira=!loaded[nome];
+      if(nome==='reservas'&&!primeira){
+        const eu=me();
+        snap.docChanges().forEach(ch=>{
+          const r={id:ch.doc.id,...ch.doc.data()};
+          if(eu&&eu.perfil==='furriel'&&ch.type==='added'&&r.status==='pendente'&&r.userId!==eu.id)
+            avisar(`Nova solicitação ${nr(r.num)}`,`${nomeM(r.userId)}: ${itensTxt(r)}`);
+          if(eu&&eu.perfil!=='furriel'&&ch.type==='modified'&&r.userId===eu.id){
+            const old=D.reservas.find(x=>x.id===r.id);
+            if(old&&old.status!==r.status&&r.status!=='cancelada')avisar(`Solicitação ${nr(r.num)}`,(ST[r.status]||[r.status])[0]);
+          }
+        });
+      }
+      let arr=snap.docs.map(d=>({id:d.id,...d.data()}));
+      if(nome==='tipos')arr.sort((a,b)=>(a.ordem??99)-(b.ordem??99)||a.nome.localeCompare(b.nome));
+      if(nome==='unidades')arr.sort((a,b)=>a.pat.localeCompare(b.pat,'pt-BR',{numeric:true}));
+      if(nome==='reservas')arr.forEach(r=>{r.log=r.log||[];r.unidades=r.unidades||[];r.itens=r.itens||[];});
+      D[nome]=arr;loaded[nome]=true;
+      if(nome==='users'){const eu=me();if(eu&&!eu.ativo){loginMsg='Seu acesso foi desativado. Procure a Furrielação.';signOut(auth);return;}}
+      if(cols.every(c=>loaded[c])){fase='app';render();}
+    },err=>{console.error(err);if(err.code==='permission-denied'){loginMsg='Sem permissão de acesso. Procure a Furrielação.';signOut(auth);}else toast(erroFirebase(err),true);});
+    unsubs.push(un);
+  });
+}
+async function setupFeito(){const s=await getDoc(doc(db,'config','setup'));return s.exists();}
+async function aoMudarLogin(u){
+  if(bootstrapping)return;
+  pararEscutas();closeModal();
+  try{
+    if(!u){sess=null;D={users:[],tipos:[],unidades:[],reservas:[]};fase=(await setupFeito())?'login':'setup';document.title='SICAM';render();return;}
+    fase='carregando';render();
+    const s=await getDoc(doc(db,'users',u.uid));
+    if(!s.exists()){loginMsg='Conta sem cadastro no sistema. Procure a Furrielação.';await signOut(auth);return;}
+    if(!s.data().ativo){loginMsg='Seu acesso foi desativado. Procure a Furrielação.';await signOut(auth);return;}
+    sess={userId:u.uid};ui.view=null;escutarTudo();
+  }catch(e){console.error(e);erroMsg=erroFirebase(e);fase='erro';render();}
+}
+
+/* ============ Render ============ */
+function render(){
+  const ae=document.activeElement, keep=ae&&ae.dataset&&ae.dataset.inp, pos=keep?ae.selectionStart:0;
+  let html;
+  if(fase==='naoconfig')html=vNaoConfig();
+  else if(fase==='erro')html=vErro();
+  else if(fase==='carregando')html=vCarregando();
+  else if(fase==='setup')html=vSetup();
+  else if(fase==='login'||!sess||!me())html=fase==='app'?vCarregando():vLogin();
+  else html=me().perfil==='furriel'?vAdmin():vApp();
+  $('#app').innerHTML=html;
+  if(keep){const el=document.querySelector(`[data-inp="${keep}"]`);if(el){el.focus();try{el.setSelectionRange(pos,pos);}catch(e){}}}
+}
+
+render();
+if(configurado){
+  try{
+    app=initializeApp(SICAM_FIREBASE);auth=getAuth(app);db=getFirestore(app);
+    onAuthStateChanged(auth,aoMudarLogin);
+  }catch(e){erroMsg=erroFirebase(e);fase='erro';render();}
+}
+setInterval(()=>{if(fase==='app'&&!modal.open&&!(document.activeElement&&document.activeElement.matches('input,select,textarea')))render();},60000);
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
