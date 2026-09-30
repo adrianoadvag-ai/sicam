@@ -190,18 +190,30 @@ function vEquip(u){
       <p class="small ${atrasada(r)?'c-stamp':'muted'}" style="margin-top:.4rem">Devolver até ${fmt(r.devolucao)}</p></button>`).join('');
     h+=`<div class="sec-h"><h2>Material da Furrielação</h2></div>`;
   }
-  if(!D.tipos.length)return h+'<div class="empty">Nenhum material cadastrado ainda.</div>';
-  h+='<div class="stack">'+D.tipos.map(t=>{
-    const c=contagem(t.id), q=ui.cart[t.id]||0, pct=x=>c.total?(x/c.total*100):0;
+  const vis=D.tipos.filter(t=>!t.oculto);
+  if(!vis.length)return h+'<div class="empty">Nenhum material cadastrado ainda.</div>';
+  const cats=catsPresentes(vis);if(ui.cat&&ui.cat!=='Todos'&&!cats.includes(ui.cat))ui.cat='Todos';
+  const q=normTxt(ui.busca);
+  const cardT=t=>{const c=contagem(t.id), qn=ui.cart[t.id]||0, pct=x=>c.total?(x/c.total*100):0;
     return `<div class="card eq">
       <div><h3>${esc(t.nome)}</h3><p class="avail${c.livre?'':' zero'}"><b>${c.livre}</b> de ${c.total} disponíveis${t.desc?' – '+esc(t.desc):''}</p></div>
       <div class="stepper" role="group" aria-label="Quantidade de ${esc(t.nome)}">
-        <button data-act="cart" data-id="${t.id}" data-d="-1" ${q?'':'disabled'} aria-label="Diminuir">−</button>
-        <output>${q}</output>
-        <button data-act="cart" data-id="${t.id}" data-d="1" ${q<c.livre?'':'disabled'} aria-label="Aumentar">+</button>
+        <button data-act="cart" data-id="${t.id}" data-d="-1" ${qn?'':'disabled'} aria-label="Diminuir">−</button>
+        <output>${qn}</output>
+        <button data-act="cart" data-id="${t.id}" data-d="1" ${qn<c.livre?'':'disabled'} aria-label="Aumentar">+</button>
       </div>
       <div class="gauge" aria-hidden="true"><i class="g-free" style="width:${pct(c.livre)}%"></i><i class="g-res" style="width:${pct(c.reservado+c.separado)}%"></i><i class="g-out" style="width:${pct(c.cautelado)}%"></i><i class="g-man" style="width:${pct(c.manutencao+c.extraviado)}%"></i></div>
-    </div>`;}).join('')+'</div>';
+    </div>`;};
+  h+=`<div class="filterbar"><input class="i" type="search" placeholder="Buscar material (ex.: pistola, HT, algema)" value="${esc(ui.busca||'')}" data-inp="busca" aria-label="Buscar material">
+    <div class="chips" role="group" aria-label="Categorias">${['Todos',...cats].map(c=>`<button class="chip" data-act="cat" data-c="${esc(c)}" aria-pressed="${(ui.cat||'Todos')===c}">${esc(c)}</button>`).join('')}</div></div>`;
+  let algum=false;
+  for(const c of cats){
+    if(ui.cat&&ui.cat!=='Todos'&&ui.cat!==c)continue;
+    const l=ordTipos(vis.filter(t=>catOf(t)===c&&(!q||normTxt(t.nome+' '+(t.desc||'')).includes(q))));
+    if(!l.length)continue;algum=true;
+    h+=`<h2 class="cat-h">${esc(c)}<span class="muted small">${l.length} ${l.length>1?'tipos':'tipo'}</span></h2><div class="stack">${l.map(cardT).join('')}</div>`;
+  }
+  if(!algum)h+=`<div class="empty">Nenhum material encontrado${q?` para "${esc(ui.busca)}"`:''}.</div>`;
   h+=`<div class="legend"><span><i class="g-free"></i>Disponível</span><span><i class="g-res"></i>Reservado</span><span><i class="g-out"></i>Cautelado</span><span><i class="g-man"></i>Manutenção</span></div>`;
   return h;
 }
@@ -380,16 +392,41 @@ function vAtivas(){
   <td><button class="btn btn-sm btn-pri" data-act="devolver" data-id="${r.id}">Registrar devolução</button></td></tr>`).join('')}</tbody></table></div>`
   :'<div class="empty">Todo o material está na Furrielação.</div>'}`;
 }
+const CATS=['Armas de fogo','Armas brancas e cerimonial','Comunicação','Proteção individual','Contenção e ordem pública','Iluminação','Uniforme e intempérie','Outros'];
+const normTxt=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const catOf=t=>t.categoria||adivinhaCat(t.nome);
+function adivinhaCat(nome){const n=' '+String(nome||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()+' ';
+  if(/pistola|revolver|carabina|fuzil|espingarda|submetralhadora|\bsmt\b|mosquet|metralhadora/.test(n))return 'Armas de fogo';
+  if(/espad/.test(n))return 'Armas brancas e cerimonial';
+  if(/\bht\b|radio|transceptor/.test(n))return 'Comunicação';
+  if(/capacete|colete|escudo|mascara|joelheira|cotoveleira|caneleira/.test(n))return 'Proteção individual';
+  if(/algema|tonfa|bastao|cone|espargidor|spray|incapacitacao|granada/.test(n))return 'Contenção e ordem pública';
+  if(/lanterna/.test(n))return 'Iluminação';
+  if(/capa|chuva|poncho|luva|bota|gandola/.test(n))return 'Uniforme e intempérie';
+  return 'Outros';}
+function normCat(c,nome){const k=normTxt(c);if(!k)return adivinhaCat(nome);
+  const f=CATS.find(x=>normTxt(x)===k);if(f)return f;
+  const mapa={protecaobalistica:'Proteção individual',equipamentodeordempublica:'Contenção e ordem pública',menosletal:'Contenção e ordem pública',
+    uniformeintemperie:'Uniforme e intempérie',armamento:'Armas de fogo',armasdefogo:'Armas de fogo',armabranca:'Armas brancas e cerimonial',comunicacao:'Comunicação',iluminacao:'Iluminação',outros:'Outros'};
+  return mapa[k]||String(c).trim();}
+function catsPresentes(tipos){const extra=[...new Set(tipos.map(catOf).filter(c=>!CATS.includes(c)))].sort();
+  return CATS.filter(c=>tipos.some(t=>catOf(t)===c)).concat(extra);}
+const ordTipos=l=>[...l].sort((a,b)=>{const ca=CATS.indexOf(catOf(a)),cb=CATS.indexOf(catOf(b));return (ca<0?99:ca)-(cb<0?99:cb)||a.nome.localeCompare(b.nome,'pt-BR');});
+const patTxt=u=>esc(u.pat)+(u.serie?` <span class="muted small">· série ${esc(u.serie)}</span>`:'');
 const USTAT={disponivel:['Disponível','var(--ok)'],separado:['Separado','var(--brass)'],cautelado:['Cautelado','var(--blue)'],manutencao:['Manutenção','var(--stamp)'],extraviado:['Extraviado','var(--stamp)']};
 function vMaterial(){
-  return `<div class="a-head"><div><h1>Material</h1><p>Tipos de material e cada unidade com seu nº de patrimônio.</p></div><button class="btn btn-pri" data-act="novoTipo">Cadastrar material</button></div>
-  ${D.tipos.map(t=>{const k=contagem(t.id);const us=D.unidades.filter(u=>u.tipoId===t.id);
-    return `<details class="tipo" data-tipo="${t.id}" ${ui.aberto===t.id?'open':''}><summary><div><h3>${esc(t.nome)}</h3><p class="small muted">${esc(t.desc||'')}</p></div>
+  const cats=catsPresentes(D.tipos);
+  const bloco=t=>{const k=contagem(t.id);const us=D.unidades.filter(u=>u.tipoId===t.id);
+    return `<details class="tipo" data-tipo="${t.id}" ${ui.aberto===t.id?'open':''}><summary><div><h3>${esc(t.nome)}${t.oculto?' <span class="tag c-muted">oculto aos cadetes</span>':''}</h3><p class="small muted">${esc(t.desc||'')}</p></div>
       <div class="row small"><span class="tag">${k.disponivel} disp.</span><span class="tag">${k.cautelado} caut.</span>${k.manutencao?`<span class="tag c-stamp">${k.manutencao} manut.</span>`:''}<span class="tag">${k.total} total</span></div></summary>
-      <div class="body"><div class="units">${us.map(u=>`<div class="unit"><span class="mono"><span class="dot" style="background:${(USTAT[u.status]||['','var(--muted)'])[1]}"></span>${esc(u.pat)}</span>
+      <div class="body"><div class="units">${us.map(u=>`<div class="unit"><span class="mono"><span class="dot" style="background:${(USTAT[u.status]||['','var(--muted)'])[1]}"></span>${patTxt(u)}</span>
         ${['separado','cautelado'].includes(u.status)?`<span class="small muted">${USTAT[u.status][0]}</span>`:
         `<select data-chg="ustat" data-id="${u.id}" aria-label="Situação de ${esc(u.pat)}">${['disponivel','manutencao','extraviado'].map(s=>`<option value="${s}" ${u.status===s?'selected':''}>${USTAT[s][0]}</option>`).join('')}</select>`}</div>`).join('')}</div>
-        <div class="row" style="margin-top:.8rem"><button class="btn btn-sm" data-act="novaUnid" data-id="${t.id}">Adicionar unidade</button></div></div></details>`;}).join('')||'<div class="empty">Cadastre o primeiro material.</div>'}`;
+        <div class="row" style="margin-top:.8rem"><button class="btn btn-sm" data-act="novaUnid" data-id="${t.id}">Adicionar unidade</button><button class="btn btn-sm" data-act="editTipo" data-id="${t.id}">Editar material</button></div></div></details>`;};
+  return `<div class="a-head"><div><h1>Material</h1><p>${D.tipos.length} tipos e ${D.unidades.length} unidades, organizados por categoria.</p></div>
+    <div class="row"><button class="btn" data-act="importar">Importar planilha</button><button class="btn btn-pri" data-act="novoTipo">Cadastrar material</button></div></div>
+  ${cats.map(c=>{const l=ordTipos(D.tipos.filter(t=>catOf(t)===c));return `<h2 class="cat-h">${esc(c)}<span class="muted small">${l.length} ${l.length>1?'tipos':'tipo'}</span></h2>${l.map(bloco).join('')}`;}).join('')
+    ||'<div class="empty"><p>Nenhum material cadastrado.</p><p style="margin-top:.6rem">Importe a planilha da Furrielação ou cadastre um a um.</p></div>'}`;
 }
 function vMilitares(){
   const pend=D.users.filter(u=>u.pendente);
@@ -442,7 +479,7 @@ function separar(id){
   for(const i of r.itens){
     const disp=D.unidades.filter(u=>u.tipoId===i.tipoId&&u.status==='disponivel');
     body+=`<h3 style="margin-top:.9rem">${esc(tipo(i.tipoId).nome)} <span class="muted small">– selecione ${i.qtd}</span></h3>
-    <div class="pick" data-tipo="${i.tipoId}" data-q="${i.qtd}">${disp.map((u,k)=>`<label><input type="checkbox" name="u" value="${u.id}" ${k<i.qtd?'checked':''}><span class="mono">${esc(u.pat)}</span></label>`).join('')||'<p class="c-stamp small">Nenhuma unidade disponível.</p>'}</div>`;
+    <div class="pick" data-tipo="${i.tipoId}" data-q="${i.qtd}">${disp.map((u,k)=>`<label><input type="checkbox" name="u" value="${u.id}" ${k<i.qtd?'checked':''}><span class="mono">${esc(u.pat)}${u.serie?`<br><span class="small muted">${esc(u.serie)}</span>`:''}</span></label>`).join('')||'<p class="c-stamp small">Nenhuma unidade disponível.</p>'}</div>`;
   }
   body+=`<p class="erro" id="sep-erro"></p><button class="btn btn-pri btn-block">Confirmar separação</button></form>`;
   openModal('Separar material – '+nr(r.num),body,'',esc(nomeM(r.userId))+' · retirada '+fmt(r.retirada));
@@ -468,7 +505,7 @@ function cautelar(id){
   const r=R(id);if(!r)return;
   openModal('Efetivar cautela – '+nr(r.num),`<form id="f-caut" data-id="${r.id}" class="stack" autocomplete="off">
     <div class="ficha"><p style="font-weight:600">${esc(nomeM(r.userId))}</p><p class="small muted">${esc(user(r.userId).pelotao)}</p>
-      <ul class="itens">${r.unidades.map(uid=>{const u=unid(uid)||{pat:'?'};return `<li><span class="mono">${esc(u.pat)}</span><span>${esc(tipo(u.tipoId).nome)}</span></li>`;}).join('')}</ul>
+      <ul class="itens">${r.unidades.map(uid=>{const u=unid(uid)||{pat:'?'};return `<li><span class="mono">${esc(u.pat)}</span><span>${esc(tipo(u.tipoId).nome)}${u.serie?` <span class="small muted">(série ${esc(u.serie)})</span>`:''}</span></li>`;}).join('')}</ul>
       <dl class="meta"><dt>Devolver até</dt><dd>${fmt(r.devolucao)}</dd></dl></div>
     <p class="small">O militar confere o material na sua frente e digita a própria senha. Isso substitui a assinatura no livro.</p>
     <label class="f"><span>Senha de ${esc(nomeM(r.userId))}</span><input class="i" type="password" name="s" required autocomplete="new-password"></label>
@@ -507,14 +544,130 @@ async function confirmarDevolucao(form,fd){
   b.update(doc(db,'reservas',r.id),{status:'devolvida',cond,log:[...r.log,entrada('Devolvida',obs)]});
   await b.commit();closeModal();toast(`Devolução de ${nr(r.num)} registrada.`,prob>0);
 }
+function camposTipo(t){
+  t=t||{};const cat=t.id?catOf(t):'';const opts=[...new Set([...CATS,...D.tipos.map(catOf)])];
+  return `<label class="f"><span>Nome do material</span><input class="i" name="nome" required value="${esc(t.nome||'')}" placeholder="Ex.: Pistola Beretta APX"></label>
+    <label class="f"><span>Categoria</span><select class="i" name="cat">${opts.map(c=>`<option ${c===cat?'selected':''}>${esc(c)}</option>`).join('')}</select></label>
+    <label class="f"><span>Descrição (opcional)</span><input class="i" name="desc" value="${esc(t.desc||'')}" placeholder="Ex.: Cal. 9 mm, com coldre e 2 carregadores"></label>
+    <label class="check"><input type="checkbox" name="vis" ${t.oculto?'':'checked'}><span>Mostrar este material para os cadetes solicitarem</span></label>`;
+}
 function novoTipo(){
-  openModal('Cadastrar material',`<form id="f-tipo" class="stack">
-    <label class="f"><span>Nome</span><input class="i" name="nome" required placeholder="Ex.: Escudo balístico"></label>
-    <label class="f"><span>Descrição (opcional)</span><input class="i" name="desc" placeholder="Ex.: Nível IIIA, com alça"></label>
-    <div class="grid2"><label class="f"><span>Prefixo do patrimônio</span><input class="i" name="pre" required maxlength="5" placeholder="ESC"></label>
+  openModal('Cadastrar material',`<form id="f-tipo" class="stack">${camposTipo()}
+    <div class="grid2"><label class="f"><span>Prefixo do patrimônio</span><input class="i" name="pre" required maxlength="6" placeholder="PBA"></label>
     <label class="f"><span>Quantidade de unidades</span><input class="i" name="q" type="number" min="1" max="300" value="1" required></label></div>
-    <p class="small muted">As unidades recebem números automáticos (ex.: ESC-001, ESC-002). Se o item tiver patrimônio oficial, ajuste depois com "Adicionar unidade".</p>
+    <p class="small muted">As unidades recebem números automáticos (ex.: PBA-001). Para usar o patrimônio e o nº de série oficiais, prefira "Importar planilha".</p>
     <button class="btn btn-pri btn-block">Cadastrar</button></form>`);
+}
+function editTipo(id){
+  const t=tipo(id);const usado=D.reservas.some(r=>(r.itens||[]).some(i=>i.tipoId===id));
+  openModal('Editar material',`<form id="f-edtipo" data-id="${id}" class="stack">${camposTipo(t)}
+    <button class="btn btn-pri btn-block">Salvar</button></form>
+    ${usado?'<p class="small muted" style="margin-top:.9rem">Este material já aparece em solicitações, por isso não pode ser excluído. Para tirá-lo da lista dos cadetes, desmarque a opção acima.</p>'
+      :`<button class="btn btn-warn btn-block" style="margin-top:.9rem" data-act="delTipo" data-id="${id}">Excluir este material e suas ${D.unidades.filter(u=>u.tipoId===id).length} unidades</button>`}`);
+}
+
+/* ============ Importar planilha ============ */
+async function carregarXLSX(){
+  if(window.XLSX)return window.XLSX;
+  await new Promise((res,rej)=>{const sc=document.createElement('script');sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload=res;sc.onerror=()=>rej(new Error('Não foi possível carregar o leitor de planilhas. Confira a internet.'));document.head.appendChild(sc);});
+  return window.XLSX;
+}
+const SIN=[['patrimonio',['patrimonio','tombamento']],['serie',['serie']],['qtd',['quantidade','qtd','qtde','quant']],['calibre',['calibre']],
+  ['categoria',['categoria','grupo','classe']],['tipoArma',['tipodearma']],['marca',['marca','fabricante']],['modelo',['modelo']],
+  ['situacao',['situacao','status','estado']],['tamanho',['tamanho']],['obs',['observacao','obs']],['lote',['lote']],
+  ['material',['material','nome','item','equipamento','denominacao']],['desc',['descricao','especificacao','detalhe']]];
+function mapearCabecalho(row){
+  const m={};row.forEach((h,i)=>{const n=normTxt(h);if(!n)return;for(const [k,ss] of SIN){if(m[k]!=null)continue;if(ss.some(x=>n.includes(x))){m[k]=i;return;}}});
+  return m;
+}
+function prefixoDe(nome){const w=String(nome).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().split(/[^A-Z0-9]+/).filter(x=>x&&!['DE','DA','DO','DAS','DOS','E','COM'].includes(x));
+  return (w.length>1?w.slice(0,4).map(x=>x[0]).join(''):(w[0]||'UN').slice(0,4))||'UN';}
+async function lerPlanilha(file){
+  const X=await carregarXLSX();
+  const wb=X.read(await file.arrayBuffer(),{type:'array'});
+  const avisos=[], grupos=new Map();let ignoradas=0;
+  for(const nomeAba of wb.SheetNames){
+    if(/instru|lista/i.test(nomeAba))continue;
+    const rows=X.utils.sheet_to_json(wb.Sheets[nomeAba],{header:1,defval:'',raw:false});
+    let hi=-1,m=null;
+    for(let i=0;i<Math.min(rows.length,12);i++){const mm=mapearCabecalho(rows[i]);if(Object.keys(mm).length>=2&&(mm.material!=null||mm.modelo!=null||mm.tipoArma!=null||mm.desc!=null)){hi=i;m=mm;break;}}
+    if(hi<0){if(rows.length)avisos.push(`Aba "${nomeAba}": não encontrei a linha de títulos (ex.: Material, Patrimônio). Aba ignorada.`);continue;}
+    if(m.lote!=null||/muni/i.test(nomeAba)){avisos.push(`Aba "${nomeAba}": munição ainda não é controlada pelo app. Aba ignorada.`);continue;}
+    const armaAba=/arma/i.test(nomeAba);
+    for(let i=hi+1;i<rows.length;i++){
+      const r=rows[i];const g=k=>m[k]!=null?String(r[m[k]]||'').trim():'';
+      let nome=g('material');const partes=[g('tipoArma'),g('marca'),g('modelo')].filter(Boolean);
+      if(!nome)nome=partes.join(' ');if(!nome&&m.desc!=null&&m.material==null)nome=g('desc');
+      if(!nome)continue;
+      if(/exemplo/i.test(g('obs'))||/^exemplo/i.test(g('patrimonio'))){continue;}
+      const sit=normTxt(g('situacao'));
+      if(/baix|inserv/.test(sit)){ignoradas++;continue;}
+      const status=/manut/.test(sit)?'manutencao':/extrav/.test(sit)?'extraviado':'disponivel';
+      const extra=partes.filter(x=>!normTxt(nome).includes(normTxt(x))).join(' ');
+      let desc=m.material!=null?[g('desc'),g('material')?extra:''].filter(Boolean).join(' – '):(m.desc!=null&&nome!==g('desc')?g('desc'):'');
+      if(g('calibre'))desc=[desc,'Cal. '+g('calibre')].filter(Boolean).join(' – ');
+      const cat=normCat(g('categoria')||(armaAba?'Armas de fogo':''),nome);
+      const pat=g('patrimonio'), serie=g('serie');
+      const qtd=(pat||serie)?1:Math.max(1,Math.min(500,parseInt(g('qtd').replace(/\D/g,''))||1));
+      const key=normTxt(nome);
+      if(!grupos.has(key))grupos.set(key,{nome,categoria:cat,desc,units:[]});
+      const gr=grupos.get(key);if(!gr.desc&&desc)gr.desc=desc;
+      for(let k=0;k<qtd;k++)gr.units.push({pat,serie,status,obs:g('obs'),tamanho:g('tamanho'),linha:`${nomeAba}, linha ${i+1}`});
+    }
+  }
+  // cruzar com o que já existe
+  const pats=new Set(D.unidades.map(u=>normTxt(u.pat))), series=new Set(D.unidades.filter(u=>u.serie).map(u=>normTxt(u.serie)));
+  const plano=[];let dup=0;
+  for(const gr of grupos.values()){
+    const ex=D.tipos.find(t=>normTxt(t.nome)===normTxt(gr.nome));
+    const pre=(ex&&ex.prefixo)||prefixoDe(gr.nome);let n=D.unidades.filter(u=>ex&&u.tipoId===ex.id).length;
+    const ok=[];
+    for(const u of gr.units){
+      if(u.pat&&pats.has(normTxt(u.pat))){dup++;avisos.push(`${u.linha}: patrimônio ${u.pat} já existe. Não importado.`);continue;}
+      if(u.serie&&series.has(normTxt(u.serie))){dup++;avisos.push(`${u.linha}: nº de série ${u.serie} já existe. Não importado.`);continue;}
+      let pat=u.pat;if(!pat){do{n++;pat=pre+'-'+String(n).padStart(3,'0');}while(pats.has(normTxt(pat)));}
+      pats.add(normTxt(pat));if(u.serie)series.add(normTxt(u.serie));
+      ok.push({...u,pat});
+    }
+    if(ok.length)plano.push({...gr,prefixo:pre,existenteId:ex?ex.id:null,units:ok});
+  }
+  if(ignoradas)avisos.push(`${ignoradas} linha(s) marcadas como baixadas/inservíveis não foram importadas.`);
+  return {plano,avisos,dup};
+}
+function abrirImportar(){
+  ui.imp=null;
+  openModal('Importar planilha de material',`<div class="stack">
+    <p>Envie o arquivo Excel (.xlsx) ou CSV com a relação do material. O app reconhece colunas como <b>Categoria, Material, Modelo, Calibre, Nº de patrimônio, Nº de série, Quantidade e Situação</b>, em qualquer ordem.</p>
+    <p class="small muted">Uma linha por unidade quando houver patrimônio ou nº de série. Item sem numeração: uma linha com a quantidade total. Nada é gravado antes de você conferir e confirmar.</p>
+    <input type="file" id="imp-file" class="i" accept=".xlsx,.xls,.csv">
+    <div id="imp-prev"></div></div>`);
+}
+async function previaImportacao(file){
+  const box=$('#imp-prev');box.innerHTML='<div class="loading" style="min-height:0;padding:1rem"><div><div class="spin"></div>Lendo a planilha…</div></div>';
+  let res;try{res=await lerPlanilha(file);}catch(e){box.innerHTML=`<p class="erro">${esc(e.message||'Não consegui ler esse arquivo.')}</p>`;return;}
+  ui.imp=res;const tot=res.plano.reduce((a,g)=>a+g.units.length,0), novos=res.plano.filter(g=>!g.existenteId).length;
+  if(!tot){box.innerHTML=`<p class="erro">Nenhum material novo encontrado nesse arquivo.</p>${res.avisos.length?`<ul class="small">${res.avisos.slice(0,30).map(a=>`<li>${esc(a)}</li>`).join('')}</ul>`:''}`;return;}
+  const porCat={};res.plano.forEach(g=>{(porCat[g.categoria]=porCat[g.categoria]||[]).push(g);});
+  box.innerHTML=`<div class="aviso"><b>${tot} unidades</b> em <b>${res.plano.length} tipos</b> (${novos} novos, ${res.plano.length-novos} já existentes)</div>
+    <div class="tbl-wrap" style="margin-top:.7rem;max-height:40vh;overflow:auto"><table><thead><tr><th>Categoria</th><th>Material</th><th>Unid.</th><th>Exemplo de nº</th></tr></thead><tbody>
+    ${Object.entries(porCat).map(([c,l])=>l.map((g,i)=>`<tr><td>${i?'':esc(c)}</td><td>${esc(g.nome)}${g.existenteId?' <span class="tag">já existe</span>':''}${g.desc?`<br><span class="small muted">${esc(g.desc)}</span>`:''}</td><td>${g.units.length}</td><td class="mono">${esc(g.units[0].pat)}${g.units[0].serie?`<br><span class="small muted">${esc(g.units[0].serie)}</span>`:''}</td></tr>`).join('')).join('')}
+    </tbody></table></div>
+    ${res.avisos.length?`<details style="margin-top:.6rem"><summary class="small">${res.avisos.length} aviso(s)</summary><ul class="small">${res.avisos.slice(0,60).map(a=>`<li>${esc(a)}</li>`).join('')}</ul></details>`:''}
+    <label class="check" style="margin-top:.8rem"><input type="checkbox" id="imp-armas" checked><span>Mostrar as armas de fogo para os cadetes solicitarem</span></label>
+    <button class="btn btn-pri btn-block" style="margin-top:.8rem" data-act="impConfirmar">Importar ${tot} unidades</button>`;
+}
+async function confirmarImportacao(btn){
+  const res=ui.imp;if(!res)return;btn.disabled=true;btn.textContent='Importando…';
+  const armasVis=$('#imp-armas')?$('#imp-armas').checked:true;
+  const ops=[];let ordem=D.tipos.length;
+  for(const g of res.plano){
+    let tid=g.existenteId;
+    if(!tid){const ref=doc(collection(db,'tipos'));tid=ref.id;ops.push(['set',ref,{nome:g.nome,categoria:g.categoria,desc:g.desc||'',prefixo:g.prefixo,ordem:ordem++,oculto:g.categoria==='Armas de fogo'&&!armasVis}]);}
+    for(const u of g.units){const d={tipoId:tid,pat:u.pat,status:u.status};if(u.serie)d.serie=u.serie;if(u.obs)d.obs=u.obs;if(u.tamanho)d.tamanho=u.tamanho;ops.push(['set',doc(collection(db,'unidades')),d]);}
+  }
+  for(let i=0;i<ops.length;i+=450){const b=writeBatch(db);ops.slice(i,i+450).forEach(([,r,d])=>b.set(r,d));await b.commit();}
+  const tot=res.plano.reduce((a,g)=>a+g.units.length,0);ui.imp=null;closeModal();toast(`${tot} unidades importadas.`);
 }
 function novoUser(){
   openModal('Cadastrar militar',`<form id="f-user" class="stack" autocomplete="off">
@@ -573,6 +726,16 @@ const acts={
   aprovar:el=>aprovar(el.dataset.id), recusar:el=>recusar(el.dataset.id), separar:el=>separar(el.dataset.id),
   cautelar:el=>cautelar(el.dataset.id), devolver:el=>devolver(el.dataset.id),
   novoTipo, novoUser,
+  editTipo:el=>editTipo(el.dataset.id),
+  delTipo:async el=>{const id=el.dataset.id,t=tipo(id);const us=D.unidades.filter(u=>u.tipoId===id);
+    if(us.some(u=>['separado','cautelado'].includes(u.status))){toast('Há unidades separadas ou cauteladas. Registre a devolução antes.',true);return;}
+    if(!confirm(`Excluir "${t.nome}" e ${us.length} unidade(s)? Isso não pode ser desfeito.`))return;
+    const refs=[doc(db,'tipos',id),...us.map(u=>doc(db,'unidades',u.id))];
+    for(let i=0;i<refs.length;i+=450){const b=writeBatch(db);refs.slice(i,i+450).forEach(r=>b.delete(r));await b.commit();}
+    closeModal();toast('Material excluído.');},
+  importar:abrirImportar,
+  impConfirmar:el=>confirmarImportacao(el),
+  cat:el=>{ui.cat=el.dataset.c;render();},
   novaUnid:async el=>{const t=tipo(el.dataset.id);const n=D.unidades.filter(u=>u.tipoId===t.id).length+1;
     const pat=prompt('Nº de patrimônio da nova unidade',(t.prefixo||'UN')+'-'+String(n).padStart(3,'0'));if(!pat)return;
     if(D.unidades.some(u=>u.pat.toLowerCase()===pat.trim().toLowerCase())){toast('Esse patrimônio já está cadastrado.',true);return;}
@@ -615,9 +778,10 @@ const forms={
   'f-dev':(fd,f)=>confirmarDevolucao(f,fd),
   'f-tipo':async fd=>{const tref=doc(collection(db,'tipos')),pre=String(fd.get('pre')).trim().toUpperCase();
     const q=Math.max(1,Math.min(300,+fd.get('q')||1));const b=writeBatch(db);
-    b.set(tref,{nome:String(fd.get('nome')).trim(),prefixo:pre,desc:String(fd.get('desc')||'').trim(),ordem:D.tipos.length});
+    b.set(tref,{nome:String(fd.get('nome')).trim(),categoria:String(fd.get('cat')),prefixo:pre,desc:String(fd.get('desc')||'').trim(),ordem:D.tipos.length,oculto:!fd.get('vis')});
     for(let k=1;k<=q;k++)b.set(doc(db,'unidades',tref.id+'_'+k),{tipoId:tref.id,pat:pre+'-'+String(k).padStart(3,'0'),status:'disponivel'});
     await b.commit();closeModal();toast('Material cadastrado.');},
+  'f-edtipo':async(fd,f)=>{await updateDoc(doc(db,'tipos',f.dataset.id),{nome:String(fd.get('nome')).trim(),categoria:String(fd.get('cat')),desc:String(fd.get('desc')||'').trim(),oculto:!fd.get('vis')});closeModal();toast('Material atualizado.');},
   'f-user':async fd=>{
     const email=emailDe(fd.get('login'));
     if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){$('#user-erro').textContent='Informe um e-mail válido.';return;}
@@ -662,11 +826,13 @@ document.addEventListener('submit',async e=>{
   finally{if(btn&&btn.isConnected)btn.disabled=false;}
 });
 document.addEventListener('change',async e=>{
+  if(e.target.id==='imp-file'&&e.target.files&&e.target.files[0]){previaImportacao(e.target.files[0]);return;}
   const k=e.target.dataset&&e.target.dataset.chg;if(!k)return;
   if(k==='ustat'){try{ui.aberto=unid(e.target.dataset.id)?.tipoId;await updateDoc(doc(db,'unidades',e.target.dataset.id),{status:e.target.value});}catch(err){toast(erroFirebase(err),true);}}
   if(k==='fs'){ui.fs=e.target.value;$('#hist-t').innerHTML=tabHist(histFiltrado());}
 });
-document.addEventListener('input',e=>{if(e.target.dataset&&e.target.dataset.inp==='q'){ui.q=e.target.value;$('#hist-t').innerHTML=tabHist(histFiltrado());}});
+document.addEventListener('input',e=>{if(e.target.dataset&&e.target.dataset.inp==='busca'){ui.busca=e.target.value;render();return;}
+  if(e.target.dataset&&e.target.dataset.inp==='q'){ui.q=e.target.value;$('#hist-t').innerHTML=tabHist(histFiltrado());}});
 
 /* ============ Firebase: sessão e dados ao vivo ============ */
 function pararEscutas(){unsubs.forEach(u=>{try{u();}catch(e){}});unsubs=[];loaded={};}
