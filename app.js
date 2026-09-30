@@ -41,6 +41,8 @@ const ui={view:null,cart:{},q:'',fs:'todos',tela:'cadete',mq:''};
 .sep-res li:last-child{border-bottom:0}.sep-res .mono{font-weight:600}
 .sep-lbl{display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem}
 .trf-in{border-left:4px solid var(--brass)}
+.rel-box{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between;border:1px dashed var(--line);border-radius:8px;padding:.6rem .75rem;margin:.9rem 0}
+.rel-box p{font-size:.85rem;color:var(--muted);margin:0}
 .acesso-f{margin-top:1.3rem;text-align:center;font-size:.85rem}
 .login.restrito{background:#141a12}.login.restrito .login-card{border-top:4px solid var(--brass)}
 `;document.head.appendChild(st);})();
@@ -323,6 +325,10 @@ return `<button class="card clickable" data-act="ver" data-id="${r.id}">
 </button>`;
 }
 function vMinhas(list){
+const rel=list.length?`<div class="rel-box"><p>Meu histórico completo de cautelas</p><div class="row"><button class="btn btn-sm" data-act="relPDF" data-escopo="meus">PDF</button><button class="btn btn-sm" data-act="relXLS" data-escopo="meus">Excel</button></div></div>`:'';
+return rel+vMinhas0(list);
+}
+function vMinhas0(list){
 if(!list.length)return `<div class="empty"><p>Você ainda não fez nenhuma solicitação.</p><p style="margin-top:.7rem"><button class="btn btn-pri" data-act="go" data-v="equip">Ver material disponível</button></p></div>`;
 const ord=['separada','aprovada','pendente','cautelada'];
 const s=[...list].sort((a,b)=>{const ia=ord.indexOf(a.status),ib=ord.indexOf(b.status);return (ia<0?9:ia)-(ib<0?9:ib)||b.num-a.num;});
@@ -407,7 +413,8 @@ ${r.itensSol?`<p class="small c-brass" style="margin-top:.3rem">Atendida parcial
 <dl class="meta"><dt>Retirada</dt><dd>${fmt(r.retirada)}</dd><dt>Devolução</dt><dd class="${atrasada(r)?'c-stamp':''}">${fmt(r.devolucao)}</dd><dt>Finalidade</dt><dd>${esc(r.finalidade)}</dd>${r.obs?`<dt>Obs.</dt><dd>${esc(r.obs)}</dd>`:''}</dl>
 ${pats}${(r.municao||[]).length?`<p class="small muted" style="margin-top:.7rem">Munição entregue</p><div class="row" style="margin-top:.25rem">${r.municao.map(x=>`<span class="tag tag-mun">${esc(munTxt(x))}</span>`).join('')}</div>
 ${(r.devMun||[]).map(x=>`<p class="small muted" style="margin-top:.3rem">${esc(tipo(x.tipoId).nome)} (lote ${esc(loteTxt(x))}): ${x.cons} utilizado(s)${x.dev?`, sobra de ${x.dev} devolvida`:', sem sobra'}</p>`).join('')}`:''}</div>
-<h3 style="margin-top:1.1rem">Andamento</h3>${tl}`;
+<h3 style="margin-top:1.1rem">Andamento</h3>${tl}
+<div class="rel-box"><p>Relatório desta cautela</p><div class="row"><button class="btn btn-sm" data-act="relPDF" data-escopo="uma" data-id="${r.id}">PDF</button><button class="btn btn-sm" data-act="relXLS" data-escopo="uma" data-id="${r.id}">Excel</button></div></div>`;
 let foot='';
 if(!admin&&['pendente','aprovada'].includes(r.status))foot=`<button class="btn btn-warn" data-act="cancelar" data-id="${r.id}">Cancelar solicitação</button>`;
 if(!admin&&r.status==='separada'&&!r.assinatura)foot=`<p class="small muted" style="margin-right:auto">Assine quando estiver na Furrielação, com o material na sua frente.</p><button class="btn btn-pri" data-act="assinar" data-id="${r.id}">Assinar retirada</button>`;
@@ -703,7 +710,8 @@ return D.reservas.filter(r=>(ui.fs==='todos'||(ui.fs==='atraso'?atrasada(r):r.st
 .sort((a,b)=>b.num-a.num);
 }
 function vHist(){
-return `<div class="a-head"><div><h1>Histórico</h1><p>Todas as solicitações e cautelas registradas.</p></div><button class="btn" data-act="csv">Baixar planilha (CSV)</button></div>
+return `<div class="a-head"><div><h1>Histórico</h1><p>Todas as solicitações e cautelas registradas.</p></div><div class="row"><button class="btn" data-act="relPDF" data-escopo="hist">Relatório PDF</button><button class="btn" data-act="relXLS" data-escopo="hist">Relatório Excel</button></div></div>
+<p class="small muted" style="margin:-.6rem 0 .8rem">Os relatórios seguem a busca e o filtro abaixo – por exemplo, digite o nome de um militar para gerar só o histórico dele.</p>
 <div class="filters"><input class="i" type="search" placeholder="Buscar militar, material, patrimônio, série ou lote" value="${esc(ui.q)}" data-inp="q" aria-label="Buscar">
 <select class="i" data-chg="fs" aria-label="Filtrar situação"><option value="todos">Todas as situações</option>${Object.entries(ST).map(([k,[t]])=>`<option value="${k}" ${ui.fs===k?'selected':''}>${t}</option>`).join('')}<option value="atraso" ${ui.fs==='atraso'?'selected':''}>Em atraso</option></select></div>
 <div id="hist-t">${tabHist(histFiltrado())}</div>`;
@@ -1111,6 +1119,154 @@ tipos.forEach(([nome,pre,q,desc],i)=>{const id='ex'+i;b.set(doc(db,'tipos',id),{
 for(let k=1;k<=q;k++)b.set(doc(db,'unidades',id+'_'+k),{tipoId:id,pat:pre+'-'+String(k).padStart(3,'0'),status:'disponivel'});});
 await b.commit();
 }
+/* ============ Relatórios (PDF e Excel) ============ */
+const fmtC=iso=>{if(!iso)return '';const d=new Date(iso);if(isNaN(d))return '';return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});};
+const logDe=(r,a)=>(r.log||[]).filter(l=>l.a===a).slice(-1)[0];
+const quando=(r,a)=>{const l=logDe(r,a);return l?fmtC(l.t):'';};
+const porQuem=(r,a)=>{const l=logDe(r,a);return l&&l.por?nomeM(l.por):'';};
+const METODO2={...METODO,transferencia:'aceite de transferência, com senha, no celular do militar'};
+const CONDTXT={ok:'Em condições',avaria:'Com avaria',extraviado:'Extraviado'};
+const infoItem=(r,id)=>(r.uinfo&&r.uinfo[id])||unid(id)||{pat:id,tipoId:''};
+function dadosRel(lista){
+return lista.map(r=>{
+const u=user(r.userId);
+const us=(r.unidades||[]).map(id=>{const x=infoItem(r,id);const c=r.cond&&r.cond[id];return {material:tipo(x.tipoId).nome,pat:x.pat||'',serie:x.serie||'',lote:'',qtd:1,sit:c?(CONDTXT[c]||c):''};});
+const mun=(r.municao||[]).map((x,k)=>{const dv=(r.devMun||[])[k];return {material:tipo(x.tipoId).nome,pat:'',serie:'',lote:loteTxt(x),qtd:x.qtd,sit:dv?`${dv.cons} utilizado(s)${dv.dev?`; sobra de ${dv.dev} devolvida`:'; sem sobra'}`:''};});
+const destinos=D.reservas.filter(x=>x.origem===r.id);
+const saidas=(r.log||[]).filter(l=>['Transferida','Transferência parcial'].includes(l.a)).map(l=>`${l.a} em ${fmtC(l.t)}${l.obs?' – '+l.obs:''}`);
+const tr=r.transferencia||{};const orig=r.origem?D.reservas.find(x=>x.id===r.origem):null;
+return {r,num:nr(r.num),militar:nomeM(r.userId),numAluno:u.login||'',pelotao:u.pelotao||'',
+situacao:atrasada(r)?'Em atraso':(ST[r.status]||[r.status])[0],finalidade:r.finalidade||'',obs:r.obs||'',itens:itensTxt(r),
+pedidoOriginal:r.itensSol?r.itensSol.map(qtdNome).join(', '):'',
+retPrev:fmtC(r.retirada),devPrev:fmtC(r.devolucao),
+solicitada:r.origem?'':quando(r,'Solicitada'),aprovada:quando(r,'Aprovada'),aprovadaPor:porQuem(r,'Aprovada'),
+separada:quando(r,'Separada'),separadaPor:porQuem(r,'Separada'),
+assinada:r.assinatura?fmtC(r.assinatura.em):quando(r,'Assinada'),formaAss:r.assinatura?(METODO2[r.assinatura.metodo]||r.assinatura.metodo):'',
+codAss:r.assinatura&&r.assinatura.hash?String(r.assinatura.hash).slice(0,16):'',
+cautelada:r.origem?fmtC(tr.em||r.criadoEm):quando(r,'Cautelada'),cauteladaPor:r.origem?'Por transferência':porQuem(r,'Cautelada'),
+devolvida:quando(r,'Devolvida'),devolvidaPor:porQuem(r,'Devolvida'),obsDev:(logDe(r,'Devolvida')||{}).obs||'',
+encerramento:(logDe(r,'Recusada')||logDe(r,'Cancelada'))?`${(logDe(r,'Recusada')||logDe(r,'Cancelada')).a} em ${fmtC((logDe(r,'Recusada')||logDe(r,'Cancelada')).t)}${(logDe(r,'Recusada')||logDe(r,'Cancelada')).obs?' – '+(logDe(r,'Recusada')||logDe(r,'Cancelada')).obs:''}`:'',
+transfEntrada:r.origem?`Recebida de ${nomeM(tr.de)} em ${fmtC(tr.em||r.criadoEm)}${orig?` (cautela de origem ${nr(orig.num)})`:''}`:'',
+transfSaida:destinos.length?destinos.map(x=>`Para ${nomeM(x.userId)} em ${fmtC((x.transferencia||{}).em||x.criadoEm)} (cautela de destino ${nr(x.num)}): ${itensTxt(x)}`).join(' | '):saidas.join(' | '),
+transfPendente:r.transferPara?`Aguardando aceite de ${nomeM(r.transferPara)} (pedido em ${fmtC((r.transfer||{}).em)})`:'',
+itensLista:us.concat(mun),andamento:(r.log||[]).map(l=>({t:fmtC(l.t),a:l.a,por:l.por?nomeM(l.por):'',obs:l.obs||''}))};
+});
+}
+const CAMPOS=[['num','Nº'],['militar','Militar'],['numAluno','Nº de aluno'],['pelotao','Pelotão'],['situacao','Situação'],['finalidade','Finalidade'],['itens','Material'],
+['pedidoOriginal','Pedido original (atendimento parcial)'],['retPrev','Retirada prevista'],['devPrev','Devolução prevista'],['solicitada','Solicitada em'],
+['aprovada','Aprovada em'],['aprovadaPor','Aprovada por'],['separada','Separada em'],['separadaPor','Separada por'],['assinada','Assinada em'],['formaAss','Forma de assinatura'],
+['codAss','Código da assinatura'],['cautelada','Cautelada (entrega) em'],['cauteladaPor','Entrega confirmada por'],['transfEntrada','Recebida por transferência'],
+['transfSaida','Transferida a outro militar'],['transfPendente','Transferência pendente'],['devolvida','Devolvida em'],['devolvidaPor','Devolução recebida por'],
+['obsDev','Observação da devolução'],['encerramento','Recusa / cancelamento'],['obs','Observação do pedido']];
+function baixarArquivo(blob,nome){
+const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=nome;document.body.appendChild(a);a.click();
+setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},4000);
+}
+function escopoRel(el){
+const e=el.dataset.escopo;
+if(e==='uma'){const r=D.reservas.find(x=>x.id===el.dataset.id);return {lista:r?[r]:[],titulo:r?`Cautela ${nr(r.num)} – ${nomeM(r.userId)}`:'',arq:r?'cautela-'+String(r.num).padStart(3,'0'):'cautela'};}
+if(e==='meus'){return {lista:D.reservas.filter(r=>r.userId===sess.userId).sort((a,b)=>b.num-a.num),titulo:`Histórico de cautelas – ${nomeM(sess.userId)}`,arq:'meu-historico'};}
+const filtro=[ui.q&&ui.q.trim()?`busca "${ui.q.trim()}"`:'',ui.fs!=='todos'?`situação: ${ui.fs==='atraso'?'Em atraso':(ST[ui.fs]||[ui.fs])[0]}`:''].filter(Boolean).join(', ');
+return {lista:histFiltrado(),titulo:'Histórico de cautelas'+(filtro?` (${filtro})`:''),arq:'historico'};
+}
+const carimboArq=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;};
+/* ---- Excel (.xlsx) gerado no próprio aparelho, sem depender de serviço externo ---- */
+const crcT=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?(0xEDB88320^(c>>>1)):(c>>>1);t[n]=c>>>0;}return t;})();
+const crc32=b=>{let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=crcT[(c^b[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;};
+function zipArquivos(files){
+const enc=new TextEncoder(),partes=[],central=[];let off=0;
+for(const f of files){const nm=enc.encode(f.name),crc=crc32(f.data),sz=f.data.length;
+const h=new DataView(new ArrayBuffer(30));h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint16(8,0,true);h.setUint16(10,0,true);h.setUint16(12,0x21,true);
+h.setUint32(14,crc,true);h.setUint32(18,sz,true);h.setUint32(22,sz,true);h.setUint16(26,nm.length,true);h.setUint16(28,0,true);
+partes.push(new Uint8Array(h.buffer),nm,f.data);
+const c=new DataView(new ArrayBuffer(46));c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x0800,true);c.setUint16(10,0,true);c.setUint16(12,0,true);c.setUint16(14,0x21,true);
+c.setUint32(16,crc,true);c.setUint32(20,sz,true);c.setUint32(24,sz,true);c.setUint16(28,nm.length,true);c.setUint16(30,0,true);c.setUint16(32,0,true);c.setUint16(34,0,true);c.setUint16(36,0,true);c.setUint32(38,0,true);c.setUint32(42,off,true);
+central.push(new Uint8Array(c.buffer),nm);off+=30+nm.length+sz;}
+const cs=central.reduce((a,b)=>a+b.length,0);const e=new DataView(new ArrayBuffer(22));e.setUint32(0,0x06054b50,true);e.setUint16(4,0,true);e.setUint16(6,0,true);
+e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,cs,true);e.setUint32(16,off,true);e.setUint16(20,0,true);
+return new Blob([...partes,...central,new Uint8Array(e.buffer)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function montarXLSX(planilhas){
+const x=v=>String(v==null?'':v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const col=i=>{let s='';i++;while(i){const m=(i-1)%26;s=String.fromCharCode(65+m)+s;i=Math.floor((i-1)/26);}return s;};
+const cel=(v,ref,st)=>typeof v==='number'?`<c r="${ref}" s="${st}"><v>${v}</v></c>`:`<c r="${ref}" s="${st}" t="inlineStr"><is><t xml:space="preserve">${x(v)}</t></is></c>`;
+const enc=new TextEncoder(),arq=(name,str)=>({name,data:enc.encode(str)}),X='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+const folhas=planilhas.map(p=>{const n=p.linhas.length+1,ult=col(p.cab.length-1);
+return X+`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>`
++`<cols>${p.cab.map((c,i)=>`<col min="${i+1}" max="${i+1}" width="${(p.larg&&p.larg[i])||18}" customWidth="1"/>`).join('')}</cols><sheetData>`
++`<row r="1">${p.cab.map((c,i)=>cel(c,col(i)+'1',1)).join('')}</row>`
++p.linhas.map((l,k)=>`<row r="${k+2}">${l.map((v,i)=>cel(v,col(i)+(k+2),2)).join('')}</row>`).join('')
++`</sheetData>${p.linhas.length?`<autoFilter ref="A1:${ult}${n}"/>`:''}</worksheet>`;});
+const files=[
+arq('[Content_Types].xml',X+`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${planilhas.map((p,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`),
+arq('_rels/.rels',X+`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`),
+arq('xl/workbook.xml',X+`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${planilhas.map((p,i)=>`<sheet name="${x(p.nome.replace(/[\[\]:*?\/\\]/g,'').slice(0,31))}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets></workbook>`),
+arq('xl/_rels/workbook.xml.rels',X+`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${planilhas.map((p,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')}<Relationship Id="rId${planilhas.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`),
+arq('xl/styles.xml',X+`<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF2F3D2A"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs></styleSheet>`),
+...folhas.map((f,i)=>arq(`xl/worksheets/sheet${i+1}.xml`,f))];
+return zipArquivos(files);
+}
+function relatorioXLSX(el){
+const {lista,titulo,arq}=escopoRel(el);if(!lista.length){toast('Não há cautelas para esse relatório.',true);return;}
+const dados=dadosRel(lista),larg={num:8,militar:22,numAluno:12,pelotao:14,situacao:14,itens:34,transfSaida:40,transfEntrada:34,obsDev:30,encerramento:30,obs:26,formaAss:30,pedidoOriginal:30};
+const pl=[
+{nome:'Cautelas',cab:CAMPOS.map(c=>c[1]),larg:CAMPOS.map(c=>larg[c[0]]||18),linhas:dados.map(d=>CAMPOS.map(c=>d[c[0]]||''))},
+{nome:'Itens',cab:['Nº','Militar','Material','Patrimônio','Nº de série','Lote','Quantidade','Situação na devolução'],larg:[8,22,28,14,16,16,11,30],
+linhas:dados.flatMap(d=>d.itensLista.map(i=>[d.num,d.militar,i.material,i.pat,i.serie,i.lote,i.qtd,i.sit]))},
+{nome:'Andamento',cab:['Nº','Militar da cautela','Data e hora','Evento','Registrado por','Detalhes'],larg:[8,22,17,24,22,60],
+linhas:dados.flatMap(d=>d.andamento.map(a=>[d.num,d.militar,a.t,a.a,a.por,a.obs]))},
+{nome:'Sobre o relatório',cab:['Campo','Valor'],larg:[24,70],linhas:[['Relatório',titulo],['Gerado em',fmtC(nowISO())],['Gerado por',nomeM(sess.userId)],['Cautelas incluídas',dados.length],['Sistema','SICAM – Furrielação APMG']]}];
+baixarArquivo(montarXLSX(pl),`sicam-${arq}-${carimboArq()}.xlsx`);toast('Relatório Excel gerado.');
+}
+/* ---- PDF ---- */
+async function carregarPDFLib(){
+if(window.PDFLib)return window.PDFLib;
+for(const src of ['https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js','https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js']){
+try{await new Promise((res,rej)=>{const sc=document.createElement('script');sc.src=src;sc.onload=res;sc.onerror=rej;document.head.appendChild(sc);});if(window.PDFLib)return window.PDFLib;}catch(e){}
+}
+throw new Error('Não foi possível carregar o gerador de PDF. Confira a internet e tente de novo.');
+}
+const winAnsi=s=>String(s==null?'':s).replace(/[“”]/g,'"').replace(/[‘’]/g,"'").replace(/→/g,'->').replace(/✓/g,'OK').replace(/\u202F|\u2009/g,' ').replace(/[^\n\x20-\x7E\u00A0-\u00FF\u2013\u2014\u2022\u20AC]/g,'');
+async function relatorioPDF(el){
+const {lista,titulo,arq}=escopoRel(el);if(!lista.length){toast('Não há cautelas para esse relatório.',true);return;}
+const btn=el;const txt0=btn.textContent;btn.disabled=true;btn.textContent='Gerando…';
+try{
+const P=await carregarPDFLib();const pdf=await P.PDFDocument.create();
+pdf.setTitle(winAnsi('SICAM – '+titulo));pdf.setAuthor(winAnsi(nomeM(sess.userId)));pdf.setCreator('SICAM – Furrielação APMG');
+const F1=await pdf.embedFont(P.StandardFonts.Helvetica),F2=await pdf.embedFont(P.StandardFonts.HelveticaBold);
+const W=595.28,H=841.89,M=40,verde=P.rgb(0.184,0.239,0.165),cinza=P.rgb(0.36,0.4,0.36),preto=P.rgb(0.1,0.12,0.1),linha=P.rgb(0.8,0.83,0.79);
+let pg,y;
+const nova=()=>{pg=pdf.addPage([W,H]);y=H-M;};
+const quebra=(t,f,s,w)=>{const out=[];for(const par of winAnsi(t).split('\n')){let l='';for(const pal of par.split(' ')){const tt=l?l+' '+pal:pal;if(l&&f.widthOfTextAtSize(tt,s)>w){out.push(l);l=pal;}else l=tt;}out.push(l);}return out;};
+const cabe=h=>{if(y-h<M+24)nova();};
+const texto=(t,o={})=>{const f=o.f||F1,s=o.s||9,x=o.x||M,w=o.w||(W-2*M),c=o.c||preto;for(const l of quebra(t,f,s,w)){cabe(s*1.35);pg.drawText(l,{x,y:y-s,size:s,font:f,color:c});y-=s*1.35;}};
+const kv=(k,v)=>{if(!v)return;const kw=150,ls=quebra(v,F1,9,W-2*M-kw);cabe(12*ls.length);pg.drawText(winAnsi(k),{x:M,y:y-9,size:8.5,font:F2,color:cinza});ls.forEach((l,i)=>pg.drawText(l,{x:M+kw,y:y-9-i*12,size:9,font:F1,color:preto}));y-=12*ls.length+1;};
+nova();
+pg.drawRectangle({x:0,y:H-78,width:W,height:78,color:verde});
+pg.drawText('SICAM',{x:M,y:H-40,size:22,font:F2,color:P.rgb(1,1,1)});
+pg.drawText(winAnsi('Cautela de material da Furrielação – APMG'),{x:M,y:H-58,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
+y=H-96;
+texto(titulo,{f:F2,s:14});y-=2;
+texto(`Gerado em ${fmtC(nowISO())} por ${nomeM(sess.userId)} · ${lista.length} cautela(s)`,{s:9,c:cinza});y-=8;
+for(const d of dadosRel(lista)){
+cabe(70);y-=4;pg.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:1.2,color:verde});y-=6;
+texto(`${d.num} – ${d.militar}${d.pelotao?' · '+d.pelotao:''}`,{f:F2,s:12});
+texto(`Situação: ${d.situacao}`,{f:F2,s:9.5,c:cinza});y-=3;
+for(const [k,rot] of CAMPOS.slice(5))kv(rot,d[k]);
+if(d.itensLista.length){y-=4;texto('Material',{f:F2,s:10});
+for(const i of d.itensLista)texto(`• ${i.lote?`${i.qtd} cart. ${i.material} – lote ${i.lote}`:`${i.material} – patrimônio ${i.pat}${i.serie?' – série '+i.serie:''}`}${i.sit?` (${i.sit})`:''}`,{x:M+8,w:W-2*M-8});}
+if(d.andamento.length){y-=4;texto('Andamento (data e hora de cada etapa)',{f:F2,s:10});
+for(const a of d.andamento)texto(`${a.t} – ${a.a}${a.por?' – '+a.por:''}${a.obs?': '+a.obs:''}`,{x:M+8,w:W-2*M-8,s:8.5});}
+y-=6;
+}
+const pags=pdf.getPages();pags.forEach((p,i)=>{p.drawLine({start:{x:M,y:30},end:{x:W-M,y:30},thickness:.5,color:linha});
+p.drawText(winAnsi(`SICAM – ${titulo}`).slice(0,90),{x:M,y:18,size:7.5,font:F1,color:cinza});
+p.drawText(`${i+1} / ${pags.length}`,{x:W-M-30,y:18,size:7.5,font:F1,color:cinza});});
+baixarArquivo(new Blob([await pdf.save()],{type:'application/pdf'}),`sicam-${arq}-${carimboArq()}.pdf`);toast('Relatório PDF gerado.');
+}catch(e){console.error(e);toast(e.message||'Não foi possível gerar o PDF.',true);}
+finally{if(btn.isConnected){btn.disabled=false;btn.textContent=txt0;}}
+}
+
 /* ============ Exportar CSV ============ */
 function exportarCSV(){
 const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
@@ -1181,7 +1337,9 @@ const pat=prompt('Nº de patrimônio da nova unidade',(t.prefixo||'UN')+'-'+Stri
 if(D.unidades.some(u=>u.pat.toLowerCase()===pat.trim().toLowerCase())){toast('Esse patrimônio já está cadastrado.',true);return;}
 ui.aberto=t.id;await setDoc(doc(collection(db,'unidades')),{tipoId:t.id,pat:pat.trim(),status:'disponivel'});toast(`${pat.trim()} adicionado a ${t.nome}.`);},
 toggleUser:async el=>{const u=user(el.dataset.id);await updateDoc(doc(db,'users',u.id),{ativo:!u.ativo,pendente:false});},
-csv:exportarCSV
+csv:exportarCSV,
+relPDF:el=>relatorioPDF(el),
+relXLS:el=>relatorioXLSX(el)
 };
 document.addEventListener('click',async e=>{
 const el=e.target.closest('[data-act]');if(!el)return;
