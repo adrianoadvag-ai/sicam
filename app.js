@@ -56,6 +56,8 @@ const ui={view:null,cart:{},q:'',fs:'todos',tela:'cadete',mq:''};
 .cart-li:last-child{border-bottom:0}.cart-li .nm{flex:1}
 .mini{display:inline-flex;align-items:center;justify-content:center;min-width:2rem;height:2rem;border:1px solid var(--line);border-radius:6px;background:var(--surface);cursor:pointer;font-size:1rem}
 .rm{color:var(--stamp);border-color:var(--stamp)}
+.aviso-cautelas{display:flex;align-items:center;justify-content:space-between;gap:.6rem;border:1px solid var(--brass);border-radius:10px;padding:.65rem .8rem;margin-bottom:1rem;background:color-mix(in srgb,var(--brass) 10%,var(--surface));font-size:.9rem}
+.bnav .dot-n{display:inline-block;min-width:1.1rem;padding:0 .3rem;border-radius:999px;background:var(--stamp);color:#fff;font-size:.7rem;line-height:1.1rem;margin-left:.2rem}
 .acesso-f{margin-top:1.3rem;text-align:center;font-size:.85rem}
 .login.restrito{background:#141a12}.login.restrito .login-card{border-top:4px solid var(--brass)}
 `;document.head.appendChild(st);})();
@@ -99,6 +101,9 @@ const qtdNome=i=>isMun(i.tipoId)?`${i.qtd} cart. ${tipo(i.tipoId).nome}`:`${i.qt
 const itensDe=ids=>{const m={};ids.forEach(id=>{const u=unid(id);if(u)m[u.tipoId]=(m[u.tipoId]||0)+1;});return Object.entries(m).map(([tipoId,qtd])=>({tipoId,qtd}));};
 const itensDeR=(ids,mun)=>{const m={};(mun||[]).forEach(x=>m[x.tipoId]=(m[x.tipoId]||0)+x.qtd);return itensDe(ids).concat(Object.entries(m).map(([tipoId,qtd])=>({tipoId,qtd})));};
 const infoUnid=id=>{const u=unid(id);return u?{pat:u.pat,serie:u.serie||'',tipoId:u.tipoId}:null;};
+/* Descrição completa de um item: nome do material + patrimônio + série */
+const descItem=x=>x?`${tipo(x.tipoId).nome} – patrimônio ${x.pat||'?'}${x.serie?', série '+x.serie:''}`:'?';
+const descUnid=(id,info)=>descItem((info&&info[id])||unid(id)||{pat:id,tipoId:''});
 const itensTxt=r=>(r.itens||[]).map(qtdNome).join(', ');
 const itensLi=r=>'<ul class="itens">'+(r.itens||[]).map(i=>isMun(i.tipoId)?`<li><b>${i.qtd}</b><span>cart. ${esc(tipo(i.tipoId).nome)}</span></li>`:`<li><b>${i.qtd}×</b><span>${esc(tipo(i.tipoId).nome)}</span></li>`).join('')+'</ul>';
 const munLi=r=>(r.municao||[]).map(x=>`<li><span class="mono">${x.qtd} cart.</span><span>${esc(tipo(x.tipoId).nome)} · lote ${esc(loteTxt(x))}</span></li>`).join('');
@@ -271,7 +276,7 @@ const minhas=D.reservas.filter(r=>r.userId===u.id);
 const ativas=minhas.filter(r=>['pendente','aprovada','separada','cautelada'].includes(r.status)).length;
 let body='', title='', sub='';
 if(v==='equip'){title='Material disponível';sub='Escolha as quantidades e envie a solicitação ao Furriel.';body=vEquip(u);}
-if(v==='reservas'){title='Minhas solicitações';sub='Acompanhe cada pedido até a devolução.';body=vMinhas(minhas);}
+if(v==='reservas'){title='Minhas cautelas';sub='Pedidos, material com você, transferências e histórico.';body=vMinhasCautelas(u);}
 if(v==='perfil'){title='Meus dados';sub=esc(nomeM(u.id));body=vPerfil(u);}
 const n=Object.values(ui.cart).filter(q=>q>0).length;
 return `<header class="m-top"><div class="wrap"><p>${esc(nomeM(u.id))} · ${esc(u.pelotao)}</p><h1>${title}</h1><p>${sub}</p></div></header>
@@ -279,11 +284,21 @@ return `<header class="m-top"><div class="wrap"><p>${esc(nomeM(u.id))} · ${esc(
 ${v==='equip'&&n?`<div class="cartbar"><div class="in"><span>${n} ${n>1?'itens na lista':'item na lista'}</span><button class="btn" data-act="cartLimpar">Limpar</button><button class="btn" data-act="solicitar">Revisar e solicitar</button></div></div>`:''}
 <nav class="bnav" aria-label="Navegação"><div class="in">
 <button data-act="go" data-v="equip" ${v==='equip'?'aria-current="page"':''}>${IC.eq}Material</button>
-<button data-act="go" data-v="reservas" ${v==='reservas'?'aria-current="page"':''}>${IC.rs}Solicitações${ativas?` (${ativas})`:''}</button>
+<button data-act="go" data-v="reservas" ${v==='reservas'?'aria-current="page"':''}>${IC.rs}Minhas cautelas${acoesPendentes(u)?`<span class="dot-n">${acoesPendentes(u)}</span>`:ativas?` (${ativas})`:''}</button>
 <button data-act="go" data-v="perfil" ${v==='perfil'?'aria-current="page"':''}>${IC.pf}Perfil</button>
 </div></nav>`;
 }
+function acoesPendentes(u){
+const tin=D.transfIn.filter(r=>r.status==='cautelada'&&r.transferPara===u.id&&r.transfer).length;
+const assinar=D.reservas.filter(r=>r.userId===u.id&&r.status==='separada'&&!r.assinatura).length;
+return tin+assinar;
+}
 function vEquip(u){
+const ativas=D.reservas.filter(r=>r.userId===u.id&&['pendente','aprovada','separada','cautelada'].includes(r.status)).length,pend=acoesPendentes(u);
+let h=(ativas||pend)?`<div class="aviso-cautelas"><span>${pend?`<b>${pend} ${pend>1?'ações aguardam':'ação aguarda'} você</b> (assinar retirada ou aceitar transferência).`:`Você tem ${ativas} ${ativas>1?'cautelas/pedidos em andamento':'cautela/pedido em andamento'}.`}</span><button class="btn btn-sm${pend?' btn-pri':''}" data-act="go" data-v="reservas">Ver minhas cautelas</button></div>`:'';
+return h+vCatalogo(u);
+}
+function vMinhasCautelas(u){
 const comigo=D.reservas.filter(r=>r.userId===u.id&&r.status==='cautelada');
 const prontas=D.reservas.filter(r=>r.userId===u.id&&r.status==='separada');
 let h='';
@@ -295,7 +310,8 @@ if(tin.length)h+=`<div class="sec-h"><h2>Transferência para você</h2></div>`+t
 if(prontas.length)h+=`<div class="sec-h"><h2>Pronto para retirada</h2></div>`+prontas.map(r=>`<div class="card active-cautela" style="margin-bottom:.6rem;border-left-color:var(--blue)">
 <div class="card-t"><div><span class="nr">${nr(r.num)}</span>${itensLi(r)}</div>${stamp(r)}</div>
 ${r.assinatura?`<p class="small muted" style="margin-top:.5rem">Você assinou às ${fmt(r.assinatura.em)}. Aguarde o Furriel confirmar a entrega.</p>`
-:`<p class="small" style="margin-top:.5rem">Na Furrielação, confira o material e assine a retirada.</p><button class="btn btn-pri btn-block" style="margin-top:.6rem" data-act="assinar" data-id="${r.id}">Assinar retirada</button>`}</div>`).join('');
+:`<p class="small" style="margin-top:.5rem">Na Furrielação, confira o material e assine a retirada.</p><button class="btn btn-pri btn-block" style="margin-top:.6rem" data-act="assinar" data-id="${r.id}">Assinar retirada</button>`}
+<div class="row" style="margin-top:.5rem;justify-content:flex-end"><button class="btn btn-sm" data-act="ver" data-id="${r.id}">Ver detalhes</button><button class="btn btn-sm btn-warn" data-act="cancelar" data-id="${r.id}">Cancelar pedido</button></div></div>`).join('');
 if(comigo.length){
 h+=`<div class="sec-h"><h2>Cautelado com você</h2></div>`+comigo.map(r=>`<div class="card active-cautela${atrasada(r)?' late':''}" style="margin-bottom:.6rem">
 <button class="clickable" style="background:none;border:0;padding:0" data-act="ver" data-id="${r.id}">
@@ -304,8 +320,20 @@ h+=`<div class="sec-h"><h2>Cautelado com você</h2></div>`+comigo.map(r=>`<div c
 ${r.transferPara?`<p class="small c-brass" style="margin-top:.5rem">Transferência para ${esc(nomeM(r.transferPara))} aguardando o aceite dele.</p>`:''}
 ${r.devAssCadete?`<p class="small c-ok" style="margin-top:.5rem">Você assinou a devolução às ${fmt(r.devAssCadete.em)}. Aguarde o Furriel conferir e assinar.</p>`:''}
 <div class="row" style="margin-top:.7rem;justify-content:flex-end"><button class="btn btn-sm" data-act="ver" data-id="${r.id}">Ver detalhes</button>${r.devAssCadete?'':r.transferPara?`<button class="btn btn-sm btn-warn" data-act="cancelarTransf" data-id="${r.id}">Cancelar transferência</button>`:`<button class="btn btn-sm" data-act="transferir" data-id="${r.id}">Transferir</button><button class="btn btn-sm btn-pri" data-act="devolverCadete" data-id="${r.id}">Devolver material</button>`}</div></div>`).join('');
-h+=`<div class="sec-h"><h2>Material da Furrielação</h2></div>`;
 }
+const andamento=D.reservas.filter(r=>r.userId===u.id&&['pendente','aprovada'].includes(r.status)).sort((a,b)=>b.num-a.num);
+if(andamento.length)h+=`<div class="sec-h"><h2>Pedidos em andamento</h2></div><div class="stack">${andamento.map(r=>`<div class="card">
+<button class="clickable" style="background:none;border:0;padding:0" data-act="ver" data-id="${r.id}"><div class="card-t"><div><span class="nr">${nr(r.num)}</span>${itensLi(r)}</div>${stamp(r)}</div>
+<p class="small muted" style="margin-top:.4rem">Retirada ${fmt(r.retirada)} · devolução ${fmt(r.devolucao)}</p></button>
+<div class="row" style="margin-top:.6rem;justify-content:flex-end"><button class="btn btn-sm" data-act="ver" data-id="${r.id}">Ver detalhes</button><button class="btn btn-sm btn-warn" data-act="cancelar" data-id="${r.id}">Cancelar pedido</button></div></div>`).join('')}</div>`;
+const fim=D.reservas.filter(r=>r.userId===u.id&&!['pendente','aprovada','separada','cautelada'].includes(r.status)).sort((a,b)=>b.num-a.num);
+if(!h&&!fim.length)return `<div class="empty"><p>Você ainda não tem cautelas.</p><p style="margin-top:.7rem"><button class="btn btn-pri" data-act="go" data-v="equip">Ver material disponível</button></p></div>`;
+if(!h)h=`<p class="small muted" style="margin:.2rem 0 .8rem">Nenhuma cautela em andamento.</p>`;
+if(fim.length)h+=`<div class="sec-h"><h2>Histórico</h2></div><div class="rel-box"><p>Meu histórico completo de cautelas</p><div class="row"><button class="btn btn-sm" data-act="relPDF" data-escopo="meus">PDF</button><button class="btn btn-sm" data-act="relXLS" data-escopo="meus">Excel</button></div></div><div class="stack">${fim.map(cardReserva).join('')}</div>`;
+return h;
+}
+function vCatalogo(u){
+let h='';
 const vis=D.tipos.filter(t=>!t.oculto);
 if(!vis.length)return h+'<div class="empty">Nenhum material cadastrado ainda.</div>';
 const cats=catsPresentes(vis);if(ui.cat&&ui.cat!=='Todos'&&!cats.includes(ui.cat))ui.cat='Todos';
@@ -365,7 +393,7 @@ const tot=D.reservas.filter(r=>r.userId===u.id);
 return `<div class="card"><dl class="meta" style="margin:0">
 <dt>Nome</dt><dd>${esc(nomeM(u.id))}</dd><dt>Usuário</dt><dd class="mono">${esc(u.login)}</dd><dt>Pelotão</dt><dd>${esc(u.pelotao)}</dd>
 <dt>Solicitações</dt><dd>${tot.length} no total</dd></dl></div>
-<p class="small muted" style="margin-top:.8rem">${tot.some(r=>r.status==='cautelada')?'Para passar um material cautelado a outro cadete, use "Transferir cautela" em Material → Cautelado com você.':'A opção "Transferir cautela" aparece em Material → Cautelado com você, depois que a Furrielação entregar o material a você.'}</p>
+<p class="small muted" style="margin-top:.8rem">${tot.some(r=>r.status==='cautelada')?'Para passar material a outro cadete ou devolvê-lo, use a aba Minhas cautelas.':'Transferência e devolução ficam na aba Minhas cautelas, depois que a Furrielação entregar o material a você.'}</p>
 <div class="stack" style="margin-top:1rem">${botaoAvisos()}${bioOk?(bioLocal(u.id)&&(u.passkeys||[]).some(k=>k.id===bioLocal(u.id))?'<p class="small muted">Assinatura por digital/Face ID: ativada neste celular.</p>':'<button class="btn btn-block" data-act="ativarBio">Ativar assinatura por digital, Face ID ou senha do celular</button>'):''}<button class="btn btn-block" data-act="senha">Trocar minha senha</button><button class="btn btn-block" data-act="sair">Sair</button></div>`;
 }
 function fichaCarrinho(){
@@ -444,17 +472,41 @@ ${(r.devMun||[]).map(x=>`<p class="small muted" style="margin-top:.3rem">${esc(t
 <div class="rel-box"><p>Relatório desta cautela</p><div class="row"><button class="btn btn-sm" data-act="relPDF" data-escopo="uma" data-id="${r.id}">PDF</button><button class="btn btn-sm" data-act="relXLS" data-escopo="uma" data-id="${r.id}">Excel</button></div></div>`;
 let foot='';
 if(!admin&&['pendente','aprovada'].includes(r.status))foot=`<button class="btn btn-warn" data-act="cancelar" data-id="${r.id}">Cancelar solicitação</button>`;
-if(!admin&&r.status==='separada'&&!r.assinatura)foot=`<p class="small muted" style="margin-right:auto">Assine quando estiver na Furrielação, com o material na sua frente.</p><button class="btn btn-pri" data-act="assinar" data-id="${r.id}">Assinar retirada</button>`;
-if(!admin&&assinada(r))foot=`<p class="small muted" style="margin-right:auto">Assinado. Aguarde o Furriel confirmar a entrega.</p>`;
+if(!admin&&r.status==='separada'&&!r.assinatura)foot=`<button class="btn btn-warn" data-act="cancelar" data-id="${r.id}">Cancelar solicitação</button><button class="btn btn-pri" data-act="assinar" data-id="${r.id}">Assinar retirada</button>`;
+if(!admin&&assinada(r))foot=`<p class="small muted" style="margin-right:auto">Assinado. Aguarde o Furriel confirmar a entrega.</p><button class="btn btn-warn" data-act="cancelar" data-id="${r.id}">Cancelar solicitação</button>`;
 if(!admin&&r.status==='cautelada'&&r.userId===u.id)foot=r.devAssCadete?`<p class="small c-ok" style="margin-right:auto">Devolução assinada. Aguarde o Furriel conferir e assinar.</p>`:r.transferPara?`<p class="small c-brass" style="margin-right:auto">Aguardando o aceite de ${esc(nomeM(r.transferPara))}.</p><button class="btn btn-warn" data-act="cancelarTransf" data-id="${r.id}">Cancelar transferência</button>`:`<button class="btn" data-act="transferir" data-id="${r.id}">Transferir</button><button class="btn btn-pri" data-act="devolverCadete" data-id="${r.id}">Devolver material</button>`;
 if(admin)foot=acoesAdmin(r,true);
 openModal('Solicitação '+nr(r.num),body,foot);
 }
 async function cancelar(id){
-const r=R(id); if(!r||!['pendente','aprovada'].includes(r.status))return;
-if(!confirm('Cancelar esta solicitação?'))return;
-await updateDoc(doc(db,'reservas',id),{status:'cancelada',log:[...r.log,entrada('Cancelada','Pelo solicitante')]});
+const r=R(id); if(!r||!['pendente','aprovada','separada'].includes(r.status)){toast('Este pedido não pode mais ser cancelado: o material já foi entregue.',true);return;}
+const separado=r.status==='separada';
+if(!confirm(separado?`Cancelar a solicitação ${nr(r.num)}? O material separado volta para a Furrielação.`:`Cancelar a solicitação ${nr(r.num)}?`))return;
+try{await updateDoc(doc(db,'reservas',id),{status:'cancelada',log:[...r.log,entrada('Cancelada',separado?'Pelo solicitante, antes da retirada – material separado devolvido ao estoque':'Pelo solicitante')]});}
+catch(e){toast(e.code==='permission-denied'?'Não foi possível cancelar: o material já foi entregue.':erroFirebase(e),true);return;}
 closeModal();toast(`Solicitação ${nr(r.num)} cancelada.`);
+}
+/* Quando um pedido já separado é cancelado pelo militar, o painel do Furriel devolve as unidades e a munição ao estoque automaticamente. */
+let liberando=false;
+async function liberarCanceladas(){
+if(liberando||!ehFurriel())return;
+const pend=D.reservas.filter(r=>r.status==='cancelada'&&!r.liberado&&(((r.unidades||[]).length)||((r.municao||[]).length)));
+if(!pend.length)return;liberando=true;
+for(const r of pend){
+try{await runTransaction(db,async tx=>{
+const os=await tx.get(doc(db,'reservas',r.id));const o=os.data();if(!o||o.status!=='cancelada'||o.liberado)return;
+const us=o.unidades||[],mun=o.municao||[];
+const usn=await Promise.all(us.map(id=>tx.get(doc(db,'unidades',id))));
+const somas={};mun.forEach(x=>{somas[x.loteId]=(somas[x.loteId]||0)+x.qtd;});const lids=Object.keys(somas);
+const lsn=await Promise.all(lids.map(id=>tx.get(doc(db,'lotes',id))));
+us.forEach((id,i)=>{if(usn[i].exists()&&usn[i].data().status==='separado')tx.update(doc(db,'unidades',id),{status:'disponivel'});});
+lids.forEach((id,i)=>{if(lsn[i].exists())tx.update(doc(db,'lotes',id),{qtd:(lsn[i].data().qtd||0)+somas[id]});});
+tx.update(doc(db,'reservas',r.id),{liberado:true,log:[...(o.log||[]),{t:nowISO(),a:'Material devolvido ao estoque',por:sess.userId,obs:us.map(i=>descUnid(i,o.uinfo)).concat(mun.map(munTxt)).join('; ')}]});
+});
+avisar(`${nr(r.num)} cancelada pelo militar`,`${nomeM(r.userId)} cancelou antes da retirada. O material separado voltou ao estoque.`);
+}catch(e){console.warn('liberar',e);}
+}
+liberando=false;
 }
 /* ============ Transferência de cautela (cadete → cadete) ============ */
 function transferir(id){
@@ -465,7 +517,7 @@ const dest=D.users.filter(x=>x.ativo&&!x.pendente&&x.perfil==='aluno'&&x.id!==u.
 const nItens=r.unidades.length+(r.municao||[]).length;
 openModal('Transferir cautela – '+nr(r.num),`<form id="f-trf" data-id="${r.id}" class="stack" autocomplete="off">
 <div><div class="row between"><p class="small"><b>Marque só o que vai transferir</b></p>${nItens>1?'<button type="button" class="link small" data-act="trfTodos">Marcar todos</button>':''}</div>
-<ul class="trf-lista">${r.unidades.map(id=>{const x=unid(id)||{pat:'?'};return `<li><input type="checkbox" name="u" value="${id}" id="tu_${id}" ${nItens===1?'checked':''}><label for="tu_${id}"><span class="mono">${esc(x.pat)}</span> <span class="small muted">${esc(tipo(x.tipoId).nome)}${x.serie?' · série '+esc(x.serie):''}</span></label></li>`;}).join('')}
+<ul class="trf-lista">${r.unidades.map(id=>{const x=unid(id)||{pat:'?'};return `<li><input type="checkbox" name="u" value="${id}" id="tu_${id}" ${nItens===1?'checked':''}><label for="tu_${id}"><b>${esc(tipo(x.tipoId).nome)}</b><br><span class="small">Patrimônio <span class="mono">${esc(x.pat)}</span>${x.serie?' · série <span class="mono">'+esc(x.serie)+'</span>':''}</span></label></li>`;}).join('')}
 ${(r.municao||[]).map((x,k)=>`<li><input type="checkbox" name="m" value="${k}" id="tm_${k}" ${nItens===1?'checked':''}><label for="tm_${k}"><span class="small">${esc(tipo(x.tipoId).nome)} · lote ${esc(loteTxt(x))}</span><br><span class="small muted">com você: ${x.qtd} cart.</span></label><input class="i q" type="number" inputmode="numeric" min="1" max="${x.qtd}" name="mq_${k}" value="${x.qtd}" aria-label="Cartuchos a transferir"></li>`).join('')}</ul>
 <p class="small muted" style="margin-top:.3rem">Na munição, ajuste quantos cartuchos vão para o colega.</p></div>
 <label class="f"><span>Transferir para</span><select class="i" name="dest" required><option value="">Selecione o cadete…</option>${dest.map(x=>`<option value="${x.id}">${esc(nomeM(x.id))} – ${esc(x.pelotao)}</option>`).join('')}</select></label>
@@ -482,7 +534,7 @@ if(!Number.isInteger(q)||q<1||q>x.qtd){err(`${tipo(x.tipoId).nome}: informe de 1
 const d=D.users.find(x=>x.id===fd.get('dest'));
 if(!sel.length&&!mun.length){err('Marque ao menos um item para transferir.');return;}
 if(!d||d.perfil!=='aluno'||d.id===u.id){err('Escolha o cadete que vai receber.');return;}
-const pats=sel.map(id=>(unid(id)||{pat:id}).pat).concat(mun.map(m=>`${m.qtd} cart. ${tipo(r.municao[m.k].tipoId).nome} – lote ${loteTxt(r.municao[m.k])}`));
+const pats=sel.map(id=>descUnid(id,r.uinfo)).concat(mun.map(m=>`${m.qtd} cartucho(s) ${tipo(r.municao[m.k].tipoId).nome} – lote ${loteTxt(r.municao[m.k])}`));
 pedirAssinatura({titulo:'Assinar pedido de transferência',rotulo:'Assinar pedido',
 corpo:`<div class="ficha"><p>Para <b>${esc(nomeM(d.id))}</b></p><ul class="itens">${pats.map(t=>`<li><span>${esc(t)}</span></li>`).join('')}</ul></div>
 <p class="aviso">Solicito a transferência do material acima. Ele continua sob minha responsabilidade até ${esc(nomeM(d.id))} aceitar e assinar o recebimento.</p>`,
@@ -501,7 +553,7 @@ closeModal();toast('Pedido de transferência cancelado.');
 const TI=id=>D.transfIn.find(x=>x.id===id);
 const munPedido=tr=>Array.isArray(tr.mun)?tr.mun:(tr.munIdx||[]).map(k=>({k,qtd:null}));
 const itensTransfer=r=>{const tr=r.transfer||{};const us=(tr.unidades||[]).filter(id=>(r.unidades||[]).includes(id));const mun=munPedido(tr).map(m=>{const x=(r.municao||[])[m.k];return x?{...x,qtd:m.qtd&&m.qtd<x.qtd?m.qtd:x.qtd}:null;}).filter(Boolean);return {us,mun};};
-const liTransfer=r=>{const {us,mun}=itensTransfer(r);return us.map(id=>{const x=(r.uinfo||{})[id]||{pat:'?'};return `<li><span class="mono">${esc(x.pat)}</span><span>${esc(tipo(x.tipoId).nome)}${x.serie?` <span class="small muted">(série ${esc(x.serie)})</span>`:''}</span></li>`;}).join('')
+const liTransfer=r=>{const {us,mun}=itensTransfer(r);return us.map(id=>{const x=(r.uinfo||{})[id]||{pat:'?'};return `<li><span><b>${esc(tipo(x.tipoId).nome)}</b><br><span class="small">Patrimônio <span class="mono">${esc(x.pat)}</span>${x.serie?` · série <span class="mono">${esc(x.serie)}</span>`:''}</span></span></li>`;}).join('')
 +mun.map(x=>`<li><span class="mono">${x.qtd} cart.</span><span>${esc(tipo(x.tipoId).nome)} · lote ${esc(loteTxt(x))}</span></li>`).join('');};
 function aceitarTransf(id){
 const r=TI(id);if(!r)return;
@@ -509,7 +561,7 @@ pedirAssinatura({titulo:'Aceitar transferência – '+nr(r.num),sub:'Aceite só 
 corpo:`<div class="ficha"><p style="font-weight:600">De ${esc(nomeM(r.userId))}</p><ul class="itens">${liTransfer(r)}</ul>
 <dl class="meta"><dt>Devolver até</dt><dd>${fmt(r.devolucao)}</dd></dl></div>
 <p class="aviso">Declaro que recebi o material acima de ${esc(nomeM(r.userId))}, conferi os números e o estado de conservação, e me responsabilizo pela guarda e pela devolução até ${fmt(r.devolucao)}.</p>`,
-dados:em=>{const {us,mun}=itensTransfer(r);return `SICAM | Aceite de transferência da cautela ${nr(r.num)} | De ${nomeM(r.userId)} para ${nomeM(sess.userId)} | ${us.map(x=>((r.uinfo||{})[x]||{pat:x}).pat).concat(mun.map(munTxt)).join(', ')} | ${em}`;},
+dados:em=>{const {us,mun}=itensTransfer(r);return `SICAM | Aceite de transferência da cautela ${nr(r.num)} | De ${nomeM(r.userId)} para ${nomeM(sess.userId)} | ${us.map(x=>descUnid(x,r.uinfo)).concat(mun.map(munTxt)).join(', ')} | ${em}`;},
 onOk:ass=>efetivarAceite(r.id,ass)});
 }
 async function efetivarAceite(id,ass){
@@ -532,10 +584,11 @@ tx.update(doc(db,'config','contador'),{seq:num});
 tx.set(ref,{num,userId:eu.id,itens:itensDeInfo(sel,mun),unidades:sel,municao:mun,uinfo,retirada:ass.em,devolucao:o.devolucao,finalidade:o.finalidade||'',
 obs:`Recebida de ${nomeM(de)} (${nr(o.num)})`,status:'cautelada',origem:os.id,cond:{},criadoEm:ass.em,
 transferencia:{de,em:ass.em,solicitadaEm:tr.em,assinaturaDe:tr.assinatura||null},assinatura:{...ass,contexto:'transferencia'},
-log:[{t:ass.em,a:'Transferência',por:eu.id,obs:`De ${nomeM(de)} para ${nomeM(eu.id)} – pedido assinado por ${nomeM(de)} e aceite assinado por ${nomeM(eu.id)}, ${forma}`}]});
-tx.update(oref,total?{status:'transferida',transferPara:null,transfer:null,log:[...(o.log||[]),{t:ass.em,a:'Transferida',por:eu.id,obs:`Para ${nomeM(eu.id)} (${nr(num)}) – aceite assinado no celular dele`}]}
+log:[{t:ass.em,a:'Transferência',por:eu.id,obs:`De ${nomeM(de)} para ${nomeM(eu.id)}: ${sel.map(i=>descUnid(i,ui0)).concat(mun.map(munTxt)).join('; ')} – pedido assinado por ${nomeM(de)} e aceite assinado por ${nomeM(eu.id)}, ${forma}`}]});
+const listaTxt=sel.map(i=>descUnid(i,ui0)).concat(mun.map(munTxt)).join('; ');
+tx.update(oref,total?{status:'transferida',transferPara:null,transfer:null,log:[...(o.log||[]),{t:ass.em,a:'Transferida',por:eu.id,obs:`Para ${nomeM(eu.id)} (${nr(num)}): ${listaTxt} – aceite assinado no celular dele`}]}
 :{unidades:resto,municao:munFica,uinfo:uinfoResto,itens:itensDeInfo(resto,munFica),transferPara:null,transfer:null,
-log:[...(o.log||[]),{t:ass.em,a:'Transferência parcial',por:eu.id,obs:`Para ${nomeM(eu.id)} (${nr(num)}): ${sel.map(i=>(ui0[i]||{pat:i}).pat).concat(mun.map(munTxt)).join(', ')} – aceite assinado no celular dele`}]});
+log:[...(o.log||[]),{t:ass.em,a:'Transferência parcial',por:eu.id,obs:`Para ${nomeM(eu.id)} (${nr(num)}): ${sel.map(i=>descUnid(i,ui0)).concat(mun.map(munTxt)).join('; ')} – aceite assinado no celular dele`}]});
 });
 closeModal();toast(`Transferência aceita. A cautela ${nr(num)} agora está com você.`);
 }
@@ -1036,7 +1089,7 @@ const r=R(id);if(!r)return;
 if(!r.devAssCadete){
 openModal('Registrar devolução – '+nr(r.num),`<div class="stack"><p>${esc(nomeM(r.userId))}${atrasada(r)?` <span class="stamp c-stamp">Em atraso</span>`:''}</p>
 <div class="ficha">${fichaItens(r)}</div>
-<p class="aviso">A devolução é assinada pelos dois: primeiro o militar, no celular dele (Material → Cautelado com você → <b>Devolver material</b>). Esta tela atualiza sozinha quando ele assinar; depois é a sua vez de conferir e assinar.</p>
+<p class="aviso">A devolução é assinada pelos dois: primeiro o militar, no celular dele (aba Minhas cautelas → <b>Devolver material</b>). Esta tela atualiza sozinha quando ele assinar; depois é a sua vez de conferir e assinar.</p>
 ${r.transferPara?`<p class="small c-brass">Há uma transferência pendente para ${esc(nomeM(r.transferPara))}.</p>`:''}
 <details><summary class="small">Militar sem celular? Assinar no balcão</summary>
 <form id="f-devbalcao" data-id="${r.id}" class="stack" autocomplete="off" style="margin-top:.6rem">
@@ -1267,8 +1320,8 @@ devolvida:quando(r,'Devolvida'),devolvidaPor:porQuem(r,'Devolvida'),
 devCadete:r.devAssCadete?`${fmtC(r.devAssCadete.em)}, ${formaTxt(r.devAssCadete)}`:'',devFurriel:r.devAssFurriel?`${fmtC(r.devAssFurriel.em)} por ${nomeM(r.devAssFurriel.por)}, ${formaTxt(r.devAssFurriel)}`:'',
 entregaAss:r.anuencia&&r.anuencia.metodo?`${fmtC(r.anuencia.em)} por ${nomeM(r.anuencia.por)}, ${formaTxt(r.anuencia)}`:'',obsDev:(logDe(r,'Devolvida')||{}).obs||'',
 encerramento:(logDe(r,'Recusada')||logDe(r,'Cancelada'))?`${(logDe(r,'Recusada')||logDe(r,'Cancelada')).a} em ${fmtC((logDe(r,'Recusada')||logDe(r,'Cancelada')).t)}${(logDe(r,'Recusada')||logDe(r,'Cancelada')).obs?' – '+(logDe(r,'Recusada')||logDe(r,'Cancelada')).obs:''}`:'',
-transfEntrada:r.origem?`Recebida de ${nomeM(tr.de)} em ${fmtC(tr.em||r.criadoEm)}${orig?` (cautela de origem ${nr(orig.num)})`:''}`:'',
-transfSaida:destinos.length?destinos.map(x=>`Para ${nomeM(x.userId)} em ${fmtC((x.transferencia||{}).em||x.criadoEm)} (cautela de destino ${nr(x.num)}): ${itensTxt(x)}`).join(' | '):saidas.join(' | '),
+transfEntrada:r.origem?`Recebida de ${nomeM(tr.de)} em ${fmtC(tr.em||r.criadoEm)}${orig?` (cautela de origem ${nr(orig.num)})`:''}: ${(r.unidades||[]).map(i=>descUnid(i,r.uinfo)).concat((r.municao||[]).map(munTxt)).join('; ')}`:'',
+transfSaida:destinos.length?destinos.map(x=>`Para ${nomeM(x.userId)} em ${fmtC((x.transferencia||{}).em||x.criadoEm)} (cautela de destino ${nr(x.num)}): ${(x.unidades||[]).map(i=>descUnid(i,x.uinfo)).concat((x.municao||[]).map(munTxt)).join('; ')}`).join(' | '):saidas.join(' | '),
 transfPendente:r.transferPara?`Aguardando aceite de ${nomeM(r.transferPara)} (pedido em ${fmtC((r.transfer||{}).em)})`:'',
 itensLista:us.concat(mun),andamento:(r.log||[]).map(l=>({t:fmtC(l.t),a:l.a,por:l.por?nomeM(l.por):'',obs:l.obs||''}))};
 });
@@ -1679,8 +1732,8 @@ let euDoc=null,dirLista=null,reserva={tipos:false,users:false};
 const montarUsuarios=()=>{if(furr)return;const base=(dirLista||[]).map(x=>({...x,ativo:true,pendente:false}));const i=base.findIndex(x=>x.id===uid);
 if(euDoc){if(i>=0)base[i]=euDoc;else base.push(euDoc);}D.users=base;};
 fontes.forEach(([nome,ref])=>{
-const pronto=()=>{if(loaded[nome])return;loaded[nome]=true;if(cols.every(c=>loaded[c])){fase='app';render();if(furr){publicarCatalogo();completarUinfo();}}};
-const depois=prim=>{if(prim)pronto();else if(fase==='app'){if(!modal.open)render();else if(ehFurriel())render();if(furr)publicarCatalogo();}};
+const pronto=()=>{if(loaded[nome])return;loaded[nome]=true;if(cols.every(c=>loaded[c])){fase='app';render();if(furr){publicarCatalogo();completarUinfo();liberarCanceladas();}}};
+const depois=prim=>{if(prim)pronto();else if(fase==='app'){if(!modal.open)render();else if(ehFurriel())render();if(furr){publicarCatalogo();liberarCanceladas();}}};
 if(nome==='catalogo'){
 unsubs.push(onSnapshot(ref,async sn=>{const prim=!loaded[nome];const c=sn.exists()?(sn.data()||{}):{};D.catDoc=c;D.catalogo=c.disp||{};
 if(!furr){
