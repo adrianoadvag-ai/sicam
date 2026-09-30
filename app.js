@@ -30,7 +30,7 @@ async function contarTudo(){await recontar(D.tipos.map(t=>t.id),true);contagemPr
 let histTudo=false;
 let D=D0();
 let sess=null, bootstrapping=false, unsubs=[], loaded={};
-const ui={view:null,cart:{},q:'',fs:'todos',tela:'cadete',mq:'',unidTipo:{},selTipos:{},selModo:false};
+const ui={view:null,cart:{},q:'',fs:'todos',tela:'cadete',mq:'',unidTipo:{},selTipos:{},selModo:false,matCat:null,selU:{}};
 (()=>{const st=document.createElement('style');st.textContent=`
 .pill{display:inline-flex;align-items:center;gap:.35rem;font-weight:600;font-size:.84rem}
 .pill::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
@@ -70,6 +70,16 @@ const ui={view:null,cart:{},q:'',fs:'todos',tela:'cadete',mq:'',unidTipo:{},selT
 .cart-li:last-child{border-bottom:0}.cart-li .nm{flex:1}
 .mini{display:inline-flex;align-items:center;justify-content:center;min-width:2rem;height:2rem;border:1px solid var(--line);border-radius:6px;background:var(--surface);cursor:pointer;font-size:1rem}
 .rm{color:var(--stamp);border-color:var(--stamp)}
+.cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.8rem;margin-top:.4rem}
+.cat-card{display:flex;flex-direction:column;align-items:flex-start;gap:.35rem;text-align:left;border:1px solid var(--line);border-radius:12px;padding:1rem;background:var(--surface);cursor:pointer;color:inherit;font:inherit}
+.cat-card:hover{border-color:var(--brass)}.cat-card h3{margin:0}.cat-card .n{font-size:.85rem;color:var(--muted)}
+.cat-card .bar{width:100%;margin-top:.3rem}
+.sel-bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;border:1px dashed var(--line);border-radius:10px;padding:.6rem .75rem;margin:.6rem 0 .9rem;background:var(--surface-2)}
+.sel-bar .grow{flex:1;min-width:10rem;font-size:.88rem}
+.unit .del{border:0;background:none;color:var(--stamp);cursor:pointer;font-size:1rem;padding:0 .2rem}
+.unit input[type=checkbox]{width:1.1rem;height:1.1rem;margin-right:.4rem}
+.perigo{border:1px solid var(--stamp);border-radius:10px;padding:.8rem;margin-top:1.6rem}
+.perigo summary{color:var(--stamp);cursor:pointer;font-weight:600}
 .canc-card{border-left:4px solid var(--stamp)}
 .tipo-sel{display:flex;gap:.6rem;align-items:flex-start}.tipo-sel>input{margin-top:1.1rem;width:1.2rem;height:1.2rem;flex:none}.tipo-sel>details{flex:1}
 .imp-map{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:.5rem;margin:.6rem 0}
@@ -760,23 +770,43 @@ return guardarU([...out.values()]);
 }
 function vMaterial(){
 const cats=catsPresentes(D.tipos);
-const bloco=t=>{const k=contagem(t.id);const us=ui.unidTipo[t.id];
+if(ui.matCat&&!cats.includes(ui.matCat))ui.matCat=null;
+const totU=D.tipos.filter(t=>!t.mun).reduce((a,t)=>a+contagem(t.id).total,0);
+const bloco=t=>{const k=contagem(t.id);const us=ui.unidTipo[t.id],su=ui.selU[t.id];const livres=(us||[]).filter(u=>!['separado','cautelado'].includes(u.status));
+const nsu=su?Object.values(su).filter(Boolean).length:0;
 return `<details class="tipo" data-tipo="${t.id}" ${ui.aberto===t.id?'open':''}><summary><div><h3>${esc(t.nome)}${t.oculto?' <span class="tag c-muted">oculto aos cadetes</span>':''}</h3><p class="small muted">${esc(t.desc||'')}</p></div>
 <div class="row small"><span class="tag">${k.disponivel} disp.</span><span class="tag">${k.cautelado} caut.</span>${k.manutencao?`<span class="tag c-stamp">${k.manutencao} manut.</span>`:''}<span class="tag">${k.total} total</span></div></summary>
-<div class="body">${us===undefined||us===null?'<p class="small muted">Carregando unidades…</p>':''}<div class="units">${(us||[]).map(u=>`<div class="unit"><span class="mono"><span class="dot" style="background:${(USTAT[u.status]||['','var(--muted)'])[1]}"></span>${patTxt(u)}</span>
-${['separado','cautelado'].includes(u.status)?`<span class="small muted">${USTAT[u.status][0]}</span>`:
-`<select data-chg="ustat" data-id="${u.id}" aria-label="Situação de ${esc(u.pat)}">${['disponivel','manutencao','extraviado'].map(s=>`<option value="${s}" ${u.status===s?'selected':''}>${USTAT[s][0]}</option>`).join('')}</select>`}</div>`).join('')}</div>
-<div class="row" style="margin-top:.8rem"><button class="btn btn-sm" data-act="novaUnid" data-id="${t.id}">Adicionar unidade</button><button class="btn btn-sm" data-act="editTipo" data-id="${t.id}">Editar material</button></div></div></details>`;};
-const totU=D.tipos.filter(t=>!t.mun).reduce((a,t)=>a+contagem(t.id).total,0);
+<div class="body">${us===undefined||us===null?'<p class="small muted">Carregando unidades…</p>':''}
+${su?`<div class="sel-bar"><span class="grow">Marque as unidades que quer excluir. Unidades separadas ou cauteladas não podem ser excluídas.</span><button class="btn btn-sm" data-act="marcarUnid" data-id="${t.id}">Marcar todas (${livres.length})</button><button class="btn btn-sm btn-warn" data-act="excluirUnid" data-id="${t.id}" ${nsu?'':'disabled'}>Excluir ${nsu||''} unidade(s)</button><button class="btn btn-sm" data-act="selUnid" data-id="${t.id}">Cancelar</button></div>`:''}
+<div class="units">${(us||[]).map(u=>{const preso=['separado','cautelado'].includes(u.status);return `<div class="unit"><span class="mono">${su&&!preso?`<input type="checkbox" data-selu="${t.id}" value="${u.id}" ${su[u.id]?'checked':''} aria-label="Marcar ${esc(u.pat)}">`:''}<span class="dot" style="background:${(USTAT[u.status]||['','var(--muted)'])[1]}"></span>${patTxt(u)}</span>
+<span class="row" style="flex-wrap:nowrap">${preso?`<span class="small muted">${USTAT[u.status][0]}</span>`:
+`<select data-chg="ustat" data-id="${u.id}" aria-label="Situação de ${esc(u.pat)}">${['disponivel','manutencao','extraviado'].map(s=>`<option value="${s}" ${u.status===s?'selected':''}>${USTAT[s][0]}</option>`).join('')}</select><button class="del" data-act="delUnid" data-id="${u.id}" title="Excluir esta unidade" aria-label="Excluir ${esc(u.pat)}">🗑</button>`}</span></div>`;}).join('')}</div>
+<div class="row" style="margin-top:.8rem"><button class="btn btn-sm" data-act="novaUnid" data-id="${t.id}">Adicionar unidade</button>${(us||[]).length&&!su?`<button class="btn btn-sm" data-act="selUnid" data-id="${t.id}">Selecionar unidades para excluir</button>`:''}<button class="btn btn-sm" data-act="editTipo" data-id="${t.id}">Editar material</button></div></div></details>`;};
+const head=`<div class="a-head"><div><h1>Material</h1><p>${D.tipos.length} tipos e ${contagemPronta?totU:'…'} unidades em ${cats.length} categoria(s).</p></div>
+<div class="row"><button class="btn" data-act="importar">Importar planilha</button><button class="btn" data-act="novoMun">Cadastrar munição</button><button class="btn btn-pri" data-act="novoTipo">Cadastrar material</button></div></div>`;
+const busca=`<div class="filters"><input class="i" type="search" style="flex:1" placeholder="Buscar em todo o material: nº de série, patrimônio, lote ou nome" value="${esc(ui.mq||'')}" data-inp="mq" aria-label="Buscar material"></div>`;
+let corpo;
+if(ui.mq&&ui.mq.trim())corpo=ui.mqRes||'<p class="small muted">Buscando…</p>';
+else if(!cats.length)corpo='<div class="empty"><p>Nenhum material cadastrado.</p><p style="margin-top:.6rem">Importe a planilha da Furrielação ou cadastre um a um.</p></div>';
+else if(!ui.matCat){
+corpo=`<div class="cat-grid">${cats.map(c=>{const l=D.tipos.filter(t=>catOf(t)===c);const mun=c==='Munição';
+const tot=l.reduce((a,t)=>{const k=contagem(t.id);a.d+=k.disponivel;a.t+=k.total;a.f+=k.cautelado+k.separado;a.m+=k.manutencao+k.extraviado;return a;},{d:0,t:0,f:0,m:0});
+const p=x=>tot.t?x/tot.t*100:0;
+return `<button class="cat-card" data-act="matCat" data-c="${esc(c)}"><h3>${esc(c)}</h3><span class="n">${l.length} ${mun?(l.length>1?'calibres':'calibre'):(l.length>1?'tipos':'tipo')} · ${contagemPronta?`${tot.d} ${mun?'cartuchos em estoque':'disponíveis de '+tot.t}`:'…'}${tot.f?` · ${tot.f} fora`:''}</span>
+${contagemPronta&&tot.t?`<div class="bar"><i class="g-free" style="width:${p(tot.d)}%"></i><i class="g-out" style="width:${p(tot.f)}%"></i><i class="g-man" style="width:${p(tot.m)}%"></i></div>`:''}</button>`;}).join('')}</div>
+<details class="perigo"><summary>Excluir todo o material</summary><p class="small" style="margin:.5rem 0">Apaga todos os materiais, unidades e lotes de munição (por exemplo, para recomeçar a importação). Materiais com unidades separadas ou cauteladas são mantidos. O histórico das cautelas continua guardado.</p><button class="btn btn-warn" data-act="excluirTudo">Excluir todo o material…</button></details>`;
+}else{
+const l=ordTipos(D.tipos.filter(t=>catOf(t)===ui.matCat));const nSel=l.filter(t=>ui.selTipos[t.id]).length;
 const blocoSel=t=>ui.selModo?`<div class="tipo-sel"><input type="checkbox" data-selt="${t.id}" ${ui.selTipos[t.id]?'checked':''} aria-label="Selecionar ${esc(t.nome)}">${t.mun?vMunTipo(t):bloco(t)}</div>`:(t.mun?vMunTipo(t):bloco(t));
-const nSel=Object.values(ui.selTipos).filter(Boolean).length;
-return `<div class="a-head"><div><h1>Material</h1><p>${D.tipos.length} tipos e ${contagemPronta?totU:'…'} unidades, organizados por categoria.</p></div>
-<div class="row"><button class="btn" data-act="selModo">${ui.selModo?'Sair da seleção':'Selecionar para excluir'}</button><button class="btn" data-act="importar">Importar planilha</button><button class="btn" data-act="novoMun">Cadastrar munição</button><button class="btn btn-pri" data-act="novoTipo">Cadastrar material</button></div></div>
-${ui.selModo?`<div class="aviso-cautelas"><span>Marque os materiais que quer excluir (com todas as unidades). Materiais com unidades separadas ou cauteladas não são excluídos.</span><button class="btn btn-sm btn-warn" data-act="excluirSel" ${nSel?'':'disabled'}>Excluir ${nSel||''} selecionado(s)</button></div>`:''}
-${vImportacoes()}
-<div class="filters"><input class="i" type="search" style="flex:1" placeholder="Buscar por nº de série, patrimônio, lote ou nome" value="${esc(ui.mq||'')}" data-inp="mq" aria-label="Buscar material"></div>
-<div id="mat-res">${ui.mq&&ui.mq.trim()?(ui.mqRes||'<p class="small muted">Buscando…</p>'):cats.map(c=>{const l=ordTipos(D.tipos.filter(t=>catOf(t)===c));return `<h2 class="cat-h">${esc(c)}<span class="muted small">${l.length} ${l.length>1?'tipos':'tipo'}</span></h2>${l.map(blocoSel).join('')}`;}).join('')
-||'<div class="empty"><p>Nenhum material cadastrado.</p><p style="margin-top:.6rem">Importe a planilha da Furrielação ou cadastre um a um.</p></div>'}</div>`;
+corpo=`<div class="row between" style="margin:.2rem 0 .4rem"><button class="link" data-act="matCat" data-c="">← Todas as categorias</button>
+${ui.selModo?'':`<button class="btn btn-sm" data-act="selModo">Selecionar materiais para excluir</button>`}</div>
+<h2 class="cat-h">${esc(ui.matCat)}<span class="muted small">${l.length} ${l.length>1?'tipos':'tipo'}</span></h2>
+${ui.selModo?`<div class="sel-bar"><span class="grow">Marque os materiais que quer excluir, com todas as unidades. Os que têm unidades separadas ou cauteladas são mantidos.</span>
+<button class="btn btn-sm" data-act="marcarTodos">Marcar todos (${l.length})</button><button class="btn btn-sm" data-act="desmarcarTodos">Desmarcar</button>
+<button class="btn btn-sm btn-warn" data-act="excluirSel" ${nSel?'':'disabled'}>Excluir ${nSel||''} selecionado(s)</button><button class="btn btn-sm" data-act="selModo">Cancelar</button></div>`:''}
+${l.map(blocoSel).join('')}`;
+}
+return head+vImportacoes()+busca+`<div id="mat-res">${corpo}</div>`;
 }
 const comQuem=id=>D.reservas.find(r=>['separada','cautelada'].includes(r.status)&&(r.unidades||[]).includes(id));
 let mqTimer=null;
@@ -800,6 +830,42 @@ const box=$('#mat-res');if(box)box.innerHTML=ui.mqRes;
 },350);
 }
 function matBusca(){return ui.mqRes||'';}
+async function excluirUnidades(tid,ids,btn){
+ids=ids.filter(Boolean);if(!ids.length)return;
+if(btn){btn.disabled=true;btn.textContent='Excluindo…';}
+try{
+const snaps=await Promise.all(ids.map(id=>getDoc(doc(db,'unidades',id))));
+const ok=snaps.filter(s=>s.exists()&&!['separado','cautelado'].includes(s.data().status)).map(s=>s.ref||doc(db,'unidades',s.id));
+for(let i=0;i<ok.length;i+=450){const b=writeBatch(db);ok.slice(i,i+450).forEach(r=>b.delete(r));await b.commit();}
+ids.forEach(id=>cacheU.delete(id));delete ui.selU[tid];recontar([tid]);await carregarUnidTipo(tid,true);
+toast(`${ok.length} unidade(s) excluída(s).${ok.length<ids.length?` ${ids.length-ok.length} não excluída(s): estão separadas ou cauteladas.`:''}`);
+}catch(e){toast(erroFirebase(e),true);if(btn){btn.disabled=false;btn.textContent='Tentar de novo';}}
+}
+function abrirExcluirTudo(){
+openModal('Excluir todo o material',`<form id="f-exctudo" class="stack" autocomplete="off">
+<p>Isso apaga <b>todos os materiais, unidades e lotes de munição</b> cadastrados. Materiais com unidades separadas ou cauteladas são mantidos. O histórico das cautelas continua guardado, e a ação <b>não pode ser desfeita</b>.</p>
+<p class="small muted">O limite gratuito é de 20 mil exclusões por dia. Se houver mais que isso, o app para no limite e você continua no dia seguinte.</p>
+<label class="f"><span>Para confirmar, digite <b>EXCLUIR TUDO</b></span><input class="i" name="conf" required autocapitalize="characters"></label>
+<p class="erro" id="exc-erro"></p><p class="small" id="exc-prog"></p>
+<button class="btn btn-warn btn-block">Excluir todo o material</button></form>`);
+}
+async function excluirTudo(form,fd){
+if(String(fd.get('conf')).trim().toUpperCase()!=='EXCLUIR TUDO'){$('#exc-erro').textContent='Digite exatamente EXCLUIR TUDO.';return;}
+const prog=$('#exc-prog'),LIM=18000;let apagados=0,tiposOk=0,mantidos=0,parou=false;
+const presos=new Set(D.unidades.filter(u=>['separado','cautelado'].includes(u.status)).map(u=>u.tipoId));
+D.reservas.filter(r=>['separada','cautelada'].includes(r.status)).forEach(r=>(r.municao||[]).forEach(x=>presos.add(x.tipoId)));
+for(const t of [...D.tipos]){
+if(presos.has(t.id)){mantidos++;continue;}
+const us=t.mun?[]:(await getDocs(query(collection(db,'unidades'),where('tipoId','==',t.id)))).docs.map(d=>d.ref);
+const refs=[...us,...D.lotes.filter(l=>l.tipoId===t.id).map(l=>doc(db,'lotes',l.id)),doc(db,'tipos',t.id)];
+if(apagados+refs.length>LIM){parou=true;break;}
+for(let i=0;i<refs.length;i+=450){const b=writeBatch(db);refs.slice(i,i+450).forEach(r=>b.delete(r));await b.commit();}
+apagados+=refs.length;tiposOk++;delete dispCount[t.id];delete ui.unidTipo[t.id];
+prog.textContent=`Excluídos ${tiposOk} material(is) (${apagados} registros)…`;
+}
+ui.matCat=null;closeModal();render();publicarCatalogo();
+toast(`${tiposOk} material(is) excluído(s).${mantidos?` ${mantidos} mantido(s) por ter unidades fora.`:''}${parou?' Limite diário de exclusões atingido: repita amanhã para continuar.':''}`,parou);
+}
 async function excluirSelecionados(btn){
 const ids=Object.keys(ui.selTipos).filter(k=>ui.selTipos[k]);if(!ids.length)return;
 const usados=ids.filter(id=>D.reservas.some(r=>(r.itens||[]).some(i=>i.tipoId===id)||(r.itensSol||[]).some(i=>i.tipoId===id)));
@@ -1687,7 +1753,15 @@ const pat=prompt('Nº de patrimônio da nova unidade',(t.prefixo||'UN')+'-'+Stri
 if(!(await getDocs(query(collection(db,'unidades'),where('pat','==',pat.trim()),limit(1)))).empty){toast('Esse patrimônio já está cadastrado.',true);return;}
 ui.aberto=t.id;await setDoc(doc(collection(db,'unidades')),{tipoId:t.id,pat:pat.trim(),status:'disponivel'});recontar([t.id]);carregarUnidTipo(t.id,true);toast(`${pat.trim()} adicionado a ${t.nome}.`);},
 selModo:()=>{ui.selModo=!ui.selModo;ui.selTipos={};render();},
-abrirTipo:el=>{ui.mq='';ui.mqRes='';ui.aberto=el.dataset.id;if(!tipo(el.dataset.id).mun)carregarUnidTipo(el.dataset.id);render();},
+matCat:el=>{ui.matCat=el.dataset.c||null;ui.selModo=false;ui.selTipos={};ui.selU={};render();window.scrollTo(0,0);},
+marcarTodos:()=>{D.tipos.filter(t=>catOf(t)===ui.matCat).forEach(t=>ui.selTipos[t.id]=true);render();},
+desmarcarTodos:()=>{ui.selTipos={};render();},
+selUnid:el=>{const t=el.dataset.id;ui.aberto=t;if(ui.selU[t])delete ui.selU[t];else ui.selU[t]={};render();},
+marcarUnid:el=>{const t=el.dataset.id;ui.aberto=t;ui.selU[t]={};(ui.unidTipo[t]||[]).filter(u=>!['separado','cautelado'].includes(u.status)).forEach(u=>ui.selU[t][u.id]=true);render();},
+excluirUnid:el=>{const t=el.dataset.id,ids=Object.keys(ui.selU[t]||{}).filter(k=>ui.selU[t][k]);if(!ids.length)return;if(!confirm(`Excluir ${ids.length} unidade(s) de ${tipo(t).nome}? Isso não pode ser desfeito.`))return;ui.aberto=t;excluirUnidades(t,ids,el);},
+delUnid:el=>{const u=unid(el.dataset.id);if(!u)return;if(!confirm(`Excluir a unidade ${u.pat} de ${tipo(u.tipoId).nome}?`))return;ui.aberto=u.tipoId;excluirUnidades(u.tipoId,[u.id]);},
+excluirTudo:()=>abrirExcluirTudo(),
+abrirTipo:el=>{ui.mq='';ui.mqRes='';ui.aberto=el.dataset.id;ui.matCat=catOf(tipo(el.dataset.id));if(!tipo(el.dataset.id).mun)carregarUnidTipo(el.dataset.id);render();},
 excluirSel:el=>excluirSelecionados(el),
 toggleUser:async el=>{const u=user(el.dataset.id);await updateDoc(doc(db,'users',u.id),{ativo:!u.ativo,pendente:false});},
 csv:exportarCSV,
@@ -1703,7 +1777,8 @@ e.preventDefault();
 try{await f(el);}catch(err){console.error(err);toast(erroFirebase(err),true);}
 });
 document.addEventListener('toggle',e=>{if(e.target.matches&&e.target.matches('details.tipo')&&e.target.open){ui.aberto=e.target.dataset.tipo;if(ehFurriel()&&!tipo(ui.aberto).mun&&ui.unidTipo[ui.aberto]===undefined)carregarUnidTipo(ui.aberto);}},true);
-document.addEventListener('change',e=>{const id=e.target.dataset&&e.target.dataset.selt;if(id){ui.selTipos[id]=e.target.checked;const b=document.querySelector('[data-act=excluirSel]');const n=Object.values(ui.selTipos).filter(Boolean).length;if(b){b.disabled=!n;b.textContent=`Excluir ${n||''} selecionado(s)`;}}});
+document.addEventListener('change',e=>{const tu=e.target.dataset&&e.target.dataset.selu;if(tu){ui.selU[tu]=ui.selU[tu]||{};ui.selU[tu][e.target.value]=e.target.checked;const n=Object.values(ui.selU[tu]).filter(Boolean).length;const b=document.querySelector(`[data-act=excluirUnid][data-id="${tu}"]`);if(b){b.disabled=!n;b.textContent=`Excluir ${n||''} unidade(s)`;}return;}
+const id=e.target.dataset&&e.target.dataset.selt;if(id){ui.selTipos[id]=e.target.checked;const b=document.querySelector('[data-act=excluirSel]');const n=Object.values(ui.selTipos).filter(Boolean).length;if(b){b.disabled=!n;b.textContent=`Excluir ${n||''} selecionado(s)`;}}});
 const forms={
 'f-login':async(fd,f)=>{loginMsg='';ui.telaLogin=f.dataset.tela||'cadete';
 try{await signInWithEmailAndPassword(auth,emailDe(fd.get('login')),fd.get('senha'));}
@@ -1742,6 +1817,7 @@ const ex=lotesDe(t.id).find(l=>normTxt(l.lote)===normTxt(lote));const mov={t:now
 if(ex){await runTransaction(db,async tx=>{const s=await tx.get(doc(db,'lotes',ex.id));const d=s.data()||{};tx.update(doc(db,'lotes',ex.id),{qtd:(d.qtd||0)+q,movs:[...(d.movs||[]),mov].slice(-40)});});}
 else await setDoc(doc(collection(db,'lotes')),{tipoId:t.id,lote,qtd:q,movs:[mov]});
 closeModal();toast(`Entrada de ${q} cartuchos no lote ${lote}.`);},
+'f-exctudo':(fd,f)=>excluirTudo(f,fd),
 'f-aj':async(fd,f)=>{const l=loteDe(f.dataset.id),q=parseInt(fd.get('q'),10);if(!l||!(q>=0))return;
 await runTransaction(db,async tx=>{const s=await tx.get(doc(db,'lotes',l.id));const d=s.data()||{};const dif=q-(d.qtd||0);
 tx.update(doc(db,'lotes',l.id),{qtd:q,movs:[...(d.movs||[]),{t:nowISO(),tipo:'Ajuste',qtd:dif,por:sess.userId,obs:String(fd.get('obs')).trim()}].slice(-40)});});
