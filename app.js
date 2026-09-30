@@ -11,7 +11,7 @@ const configurado=SICAM_FIREBASE&&SICAM_FIREBASE.apiKey&&!/COLE/i.test(SICAM_FIR
 let app,auth,db;
 let fase=configurado?'carregando':'naoconfig'; // naoconfig | carregando | setup | login | cadastro | verificar | aguardando | app | erro
 let erroMsg='', loginMsg='';
-const D0=()=>({users:[],tipos:[],unidades:[],reservas:[],lotes:[],catalogo:{}});
+const D0=()=>({users:[],tipos:[],unidades:[],reservas:[],lotes:[],catalogo:{},transfIn:[]});
 let D=D0();
 let sess=null, bootstrapping=false, unsubs=[], loaded={};
 const ui={view:null,cart:{},q:'',fs:'todos',tela:'cadete',mq:''};
@@ -36,6 +36,11 @@ const ui={view:null,cart:{},q:'',fs:'todos',tela:'cadete',mq:''};
 .dupla{border:1px solid var(--line);border-radius:8px;padding:.8rem;background:var(--surface-2)}
 .pick-trf{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
 .tag-mun{border-color:var(--brass)}
+.sep-res{list-style:none;margin:.5rem 0 0;padding:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.sep-res li{display:flex;justify-content:space-between;align-items:center;gap:.6rem;padding:.45rem .6rem;border-bottom:1px solid var(--line)}
+.sep-res li:last-child{border-bottom:0}.sep-res .mono{font-weight:600}
+.sep-lbl{display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem}
+.trf-in{border-left:4px solid var(--brass)}
 .acesso-f{margin-top:1.3rem;text-align:center;font-size:.85rem}
 .login.restrito{background:#141a12}.login.restrito .login-card{border-top:4px solid var(--brass)}
 `;document.head.appendChild(st);})();
@@ -261,6 +266,11 @@ function vEquip(u){
 const comigo=D.reservas.filter(r=>r.userId===u.id&&r.status==='cautelada');
 const prontas=D.reservas.filter(r=>r.userId===u.id&&r.status==='separada');
 let h='';
+const tin=D.transfIn.filter(r=>r.status==='cautelada'&&r.transferPara===u.id&&r.transfer);
+if(tin.length)h+=`<div class="sec-h"><h2>Transferência para você</h2></div>`+tin.map(r=>`<div class="card trf-in" style="margin-bottom:.6rem">
+<p><b>${esc(nomeM(r.userId))}</b> quer transferir para você:</p><ul class="itens">${liTransfer(r)}</ul>
+<p class="small muted" style="margin-top:.4rem">Devolver até ${fmt(r.devolucao)}</p>
+<div class="row" style="margin-top:.7rem;justify-content:flex-end"><button class="btn btn-sm btn-warn" data-act="recusarTransf" data-id="${r.id}">Recusar</button><button class="btn btn-sm btn-pri" data-act="aceitarTransf" data-id="${r.id}">Aceitar e assinar</button></div></div>`).join('');
 if(prontas.length)h+=`<div class="sec-h"><h2>Pronto para retirada</h2></div>`+prontas.map(r=>`<div class="card active-cautela" style="margin-bottom:.6rem;border-left-color:var(--blue)">
 <div class="card-t"><div><span class="nr">${nr(r.num)}</span>${itensLi(r)}</div>${stamp(r)}</div>
 ${r.assinatura?`<p class="small muted" style="margin-top:.5rem">Você assinou às ${fmt(r.assinatura.em)}. Aguarde o Furriel confirmar a entrega.</p>`
@@ -270,7 +280,8 @@ h+=`<div class="sec-h"><h2>Cautelado com você</h2></div>`+comigo.map(r=>`<div c
 <button class="clickable" style="background:none;border:0;padding:0" data-act="ver" data-id="${r.id}">
 <div class="card-t"><div><span class="nr">${nr(r.num)}</span>${itensLi(r)}</div>${stamp(r)}</div>
 <p class="small ${atrasada(r)?'c-stamp':'muted'}" style="margin-top:.4rem">Devolver até ${fmt(r.devolucao)}</p></button>
-<div class="row" style="margin-top:.7rem;justify-content:flex-end"><button class="btn btn-sm" data-act="ver" data-id="${r.id}">Ver detalhes</button><button class="btn btn-sm btn-pri" data-act="transferir" data-id="${r.id}">Transferir cautela</button></div></div>`).join('');
+${r.transferPara?`<p class="small c-brass" style="margin-top:.5rem">Transferência para ${esc(nomeM(r.transferPara))} aguardando o aceite dele.</p>`:''}
+<div class="row" style="margin-top:.7rem;justify-content:flex-end"><button class="btn btn-sm" data-act="ver" data-id="${r.id}">Ver detalhes</button>${r.transferPara?`<button class="btn btn-sm btn-warn" data-act="cancelarTransf" data-id="${r.id}">Cancelar transferência</button>`:`<button class="btn btn-sm btn-pri" data-act="transferir" data-id="${r.id}">Transferir cautela</button>`}</div></div>`).join('');
 h+=`<div class="sec-h"><h2>Material da Furrielação</h2></div>`;
 }
 const vis=D.tipos.filter(t=>!t.oculto);
@@ -401,7 +412,7 @@ let foot='';
 if(!admin&&['pendente','aprovada'].includes(r.status))foot=`<button class="btn btn-warn" data-act="cancelar" data-id="${r.id}">Cancelar solicitação</button>`;
 if(!admin&&r.status==='separada'&&!r.assinatura)foot=`<p class="small muted" style="margin-right:auto">Assine quando estiver na Furrielação, com o material na sua frente.</p><button class="btn btn-pri" data-act="assinar" data-id="${r.id}">Assinar retirada</button>`;
 if(!admin&&assinada(r))foot=`<p class="small muted" style="margin-right:auto">Assinado. Aguarde o Furriel confirmar a entrega.</p>`;
-if(!admin&&r.status==='cautelada'&&r.userId===u.id)foot=`<button class="btn btn-pri" data-act="transferir" data-id="${r.id}">Transferir cautela</button>`;
+if(!admin&&r.status==='cautelada'&&r.userId===u.id)foot=r.transferPara?`<p class="small c-brass" style="margin-right:auto">Aguardando o aceite de ${esc(nomeM(r.transferPara))}.</p><button class="btn btn-warn" data-act="cancelarTransf" data-id="${r.id}">Cancelar transferência</button>`:`<button class="btn btn-pri" data-act="transferir" data-id="${r.id}">Transferir cautela</button>`;
 if(admin)foot=acoesAdmin(r,true);
 openModal('Solicitação '+nr(r.num),body,foot);
 }
@@ -414,51 +425,88 @@ closeModal();toast(`Solicitação ${nr(r.num)} cancelada.`);
 /* ============ Transferência de cautela (cadete → cadete) ============ */
 function transferir(id){
 const r=R(id),u=me();if(!r||r.status!=='cautelada'||r.userId!==u.id)return;
+if(r.transferPara){toast(`Já existe um pedido de transferência para ${nomeM(r.transferPara)} aguardando aceite.`,true);return;}
 const dest=D.users.filter(x=>x.ativo&&!x.pendente&&x.perfil==='aluno'&&x.id!==u.id).sort((a,b)=>a.nome.localeCompare(b.nome));
 openModal('Transferir cautela – '+nr(r.num),`<form id="f-trf" data-id="${r.id}" class="stack" autocomplete="off">
-<p class="small muted">Os dois militares devem estar juntos, com o material. Cada um digita a própria senha neste aparelho – isso vale como a assinatura dos dois.</p>
 <div><p class="small muted">Material a transferir</p><div class="pick pick-trf">${r.unidades.map(id=>{const x=unid(id)||{pat:'?'};return `<label><input type="checkbox" name="u" value="${id}" checked><span><span class="mono">${esc(x.pat)}</span> <span class="small muted">${esc(tipo(x.tipoId).nome)}</span></span></label>`;}).join('')}${(r.municao||[]).map((x,k)=>`<label><input type="checkbox" name="m" value="${k}" checked><span><span class="mono">${x.qtd} cart.</span> <span class="small muted">${esc(tipo(x.tipoId).nome)} · lote ${esc(loteTxt(x))}</span></span></label>`).join('')}</div></div>
 <label class="f"><span>Transferir para</span><select class="i" name="dest" required><option value="">Selecione o cadete…</option>${dest.map(x=>`<option value="${x.id}">${esc(nomeM(x.id))} – ${esc(x.pelotao)}</option>`).join('')}</select></label>
-<div class="dupla stack">
-<label class="f"><span>Sua senha – ${esc(nomeM(u.id))} (entrega)</span><input class="i" type="password" name="s1" required autocomplete="current-password"></label>
-<label class="f"><span>Senha de quem recebe</span><input class="i" type="password" name="s2" required autocomplete="off"></label>
-</div>
-<p class="small muted">O prazo de devolução continua o mesmo (${fmt(r.devolucao)}). A partir da transferência, a responsabilidade pelo material é de quem recebe.</p>
+<label class="f"><span>Sua senha – confirma o pedido de transferência</span><input class="i" type="password" name="s1" required autocomplete="current-password"></label>
+<p class="small muted">O colega recebe o pedido no celular dele e precisa <b>aceitar e assinar com a senha dele</b>. Até lá, o material continua sob sua responsabilidade. O prazo de devolução continua o mesmo (${fmt(r.devolucao)}).</p>
 <p class="erro" id="trf-erro"></p>
-<button class="btn btn-pri btn-block">Transferir cautela</button></form>`);
+<button class="btn btn-pri btn-block">Enviar pedido de transferência</button></form>`);
 }
 async function confirmarTransf(form,fd){
 const r=R(form.dataset.id),u=me(),err=m=>{$('#trf-erro').textContent=m;};
 if(!r||r.status!=='cautelada'||r.userId!==u.id){err('Esta cautela não está mais com você.');return;}
 const sel=fd.getAll('u').filter(id=>r.unidades.includes(id));
-const mk=fd.getAll('m').map(Number),mun=(r.municao||[]).filter((x,k)=>mk.includes(k)),munResto=(r.municao||[]).filter((x,k)=>!mk.includes(k));
+const mk=fd.getAll('m').map(Number).filter(k=>k>=0&&k<(r.municao||[]).length);
 const d=D.users.find(x=>x.id===fd.get('dest'));
-if(!sel.length&&!mun.length){err('Marque ao menos um item para transferir.');return;}
+if(!sel.length&&!mk.length){err('Marque ao menos um item para transferir.');return;}
 if(!d||!d.ativo||d.pendente||d.perfil!=='aluno'||d.id===u.id){err('Escolha o cadete que vai receber.');return;}
 try{const a=auth.currentUser;await reauthenticateWithCredential(a,EmailAuthProvider.credential(a.email,String(fd.get('s1'))));}
 catch(e){err(e.code==='auth/too-many-requests'?erroFirebase(e):'Sua senha está incorreta.');return;}
-const total=sel.length===r.unidades.length&&!munResto.length,t=nowISO();
-const pats=sel.map(id=>(unid(id)||{pat:id}).pat).concat(mun.map(munTxt)).join(', ');
-const uinfo={};sel.forEach(id=>{const x=(r.uinfo&&r.uinfo[id])||infoUnid(id);if(x)uinfo[id]=x;});
-const novo={userId:d.id,itens:itensDeR(sel,mun),unidades:sel,municao:mun,uinfo,retirada:t,devolucao:r.devolucao,finalidade:r.finalidade||'',
-obs:`Recebida de ${nomeM(u.id)} (${nr(r.num)})`,status:'cautelada',origem:r.id,cond:{},criadoEm:t,transferencia:{de:u.id,em:t},
-log:[{t,a:'Transferência',por:u.id,obs:`De ${nomeM(u.id)} para ${nomeM(d.id)} – assinada com a senha dos dois`}]};
-let num=0,falhou='';
+const pats=sel.map(id=>(unid(id)||{pat:id}).pat).concat(mk.map(k=>munTxt(r.municao[k]))).join(', ');
+await updateDoc(doc(db,'reservas',r.id),{transferPara:d.id,transfer:{de:u.id,para:d.id,em:nowISO(),unidades:sel,munIdx:mk},
+log:[...r.log,entrada('Transferência solicitada',`Para ${nomeM(d.id)}: ${pats} – confirmada com a senha de ${nomeM(u.id)}`)]});
+closeModal();toast(`Pedido enviado a ${nomeM(d.id)}. Ele precisa aceitar e assinar no celular dele.`);
+}
+async function cancelarTransf(id){
+const r=R(id);if(!r||!r.transferPara)return;
+if(!confirm(`Cancelar o pedido de transferência para ${nomeM(r.transferPara)}?`))return;
+await updateDoc(doc(db,'reservas',r.id),{transferPara:null,transfer:null,log:[...r.log,entrada('Transferência cancelada',`Pedido para ${nomeM(r.transferPara)} cancelado`)]});
+closeModal();toast('Pedido de transferência cancelado.');
+}
+const TI=id=>D.transfIn.find(x=>x.id===id);
+const itensTransfer=r=>{const tr=r.transfer||{};const us=(tr.unidades||[]).filter(id=>(r.unidades||[]).includes(id));const mun=(tr.munIdx||[]).map(k=>(r.municao||[])[k]).filter(Boolean);return {us,mun};};
+const liTransfer=r=>{const {us,mun}=itensTransfer(r);return us.map(id=>{const x=(r.uinfo||{})[id]||{pat:'?'};return `<li><span class="mono">${esc(x.pat)}</span><span>${esc(tipo(x.tipoId).nome)}${x.serie?` <span class="small muted">(série ${esc(x.serie)})</span>`:''}</span></li>`;}).join('')
++mun.map(x=>`<li><span class="mono">${x.qtd} cart.</span><span>${esc(tipo(x.tipoId).nome)} · lote ${esc(loteTxt(x))}</span></li>`).join('');};
+function aceitarTransf(id){
+const r=TI(id);if(!r)return;
+openModal('Aceitar transferência – '+nr(r.num),`<form id="f-aceite" data-id="${r.id}" class="stack" autocomplete="off">
+<div class="ficha"><p style="font-weight:600">De ${esc(nomeM(r.userId))}</p><ul class="itens">${liTransfer(r)}</ul>
+<dl class="meta"><dt>Devolver até</dt><dd>${fmt(r.devolucao)}</dd></dl></div>
+<p class="aviso">Declaro que recebi o material acima de ${esc(nomeM(r.userId))}, conferi os números e o estado de conservação, e me responsabilizo pela guarda e pela devolução até ${fmt(r.devolucao)}.</p>
+<label class="f"><span>Sua senha – assina o recebimento</span><input class="i" type="password" name="s" required autocomplete="current-password"></label>
+<p class="erro" id="aceite-erro"></p>
+<button class="btn btn-pri btn-block">Aceitar e assinar</button></form>`,'','Aceite só com o material na sua frente.');
+}
+async function confirmarAceite(form,fd){
+const r0=TI(form.dataset.id),eu=me(),err=m=>{$('#aceite-erro').textContent=m;};
+if(!r0){err('Este pedido não está mais disponível.');return;}
+try{const a=auth.currentUser;await reauthenticateWithCredential(a,EmailAuthProvider.credential(a.email,String(fd.get('s'))));}
+catch(e){err(e.code==='auth/too-many-requests'?erroFirebase(e):'Senha incorreta.');return;}
+const ref=doc(collection(db,'reservas')),oref=doc(db,'reservas',r0.id);let num=0;
 try{
-await comAuthSecundario(async a2=>{
-let c;try{c=await signInWithEmailAndPassword(a2,emailUser(d),String(fd.get('s2')));}catch(e){falhou=e.code==='auth/too-many-requests'?erroFirebase(e):`Senha de ${nomeM(d.id)} incorreta.`;return;}
-if(c.user.uid!==d.id){falhou=`Senha de ${nomeM(d.id)} incorreta.`;return;}
-await updateDoc(doc(db,'reservas',r.id),{transferPara:d.id});
-const db2=getFirestore(a2.app);const ref=doc(collection(db2,'reservas'));
-await runTransaction(db2,async tx=>{const cref=doc(db2,'config','contador');const cs=await tx.get(cref);num=((cs.exists()&&cs.data().seq)||0)+1;tx.update(cref,{seq:num});tx.set(ref,{...novo,num});});
+await runTransaction(db,async tx=>{
+const os=await tx.get(oref),cs=await tx.get(doc(db,'config','contador'));
+const o=os.exists()?os.data():null;
+if(!o||o.status!=='cautelada'||o.transferPara!==eu.id||!o.transfer)throw {code:'mudou'};
+const tr=o.transfer,uAll=o.unidades||[],mAll=o.municao||[];
+const sel=(tr.unidades||[]).filter(id=>uAll.includes(id)),mk=(tr.munIdx||[]).filter(k=>k>=0&&k<mAll.length);
+const mun=mk.map(k=>mAll[k]),munResto=mAll.filter((x,k)=>!mk.includes(k)),resto=uAll.filter(id=>!sel.includes(id));
+if(!sel.length&&!mun.length)throw {code:'mudou'};
+const ui0=o.uinfo||{},uinfo={},uinfoResto={};sel.forEach(id=>{if(ui0[id])uinfo[id]=ui0[id];});resto.forEach(id=>{if(ui0[id])uinfoResto[id]=ui0[id];});
+const itensDeInfo=(ids,mm,info)=>{const m={};ids.forEach(id=>{const x=info[id];if(x)m[x.tipoId]=(m[x.tipoId]||0)+1;});mm.forEach(x=>m[x.tipoId]=(m[x.tipoId]||0)+x.qtd);return Object.entries(m).map(([tipoId,qtd])=>({tipoId,qtd}));};
+num=((cs.exists()&&cs.data().seq)||0)+1;
+const t=nowISO(),de=o.userId;
+const total=!resto.length&&!munResto.length;
+tx.update(doc(db,'config','contador'),{seq:num});
+tx.set(ref,{num,userId:eu.id,itens:itensDeInfo(sel,mun,ui0),unidades:sel,municao:mun,uinfo,retirada:t,devolucao:o.devolucao,finalidade:o.finalidade||'',
+obs:`Recebida de ${nomeM(de)} (${nr(o.num)})`,status:'cautelada',origem:os.id,cond:{},criadoEm:t,
+transferencia:{de,em:t,solicitadaEm:tr.em},assinatura:{por:eu.id,em:t,metodo:'transferencia'},
+log:[{t,a:'Transferência',por:eu.id,obs:`De ${nomeM(de)} para ${nomeM(eu.id)} – pedido confirmado com a senha de ${nomeM(de)} e aceite assinado com a senha de ${nomeM(eu.id)}`}]});
+tx.update(oref,total?{status:'transferida',transferPara:null,transfer:null,log:[...(o.log||[]),{t,a:'Transferida',por:eu.id,obs:`Para ${nomeM(eu.id)} (${nr(num)}) – aceite assinado no celular dele`}]}
+:{unidades:resto,municao:munResto,uinfo:uinfoResto,itens:itensDeInfo(resto,munResto,ui0),transferPara:null,transfer:null,
+log:[...(o.log||[]),{t,a:'Transferência parcial',por:eu.id,obs:`Para ${nomeM(eu.id)} (${nr(num)}) – aceite assinado no celular dele`}]});
 });
-}catch(e){console.error(e);err('Não foi possível concluir a transferência. Verifique a conexão ou procure a Furrielação.');return;}
-if(falhou){err(falhou);return;}
-const upd=total?{status:'transferida',log:[...r.log,entrada('Transferida',`Para ${nomeM(d.id)} (${nr(num)}) – assinada com a senha dos dois`)]}
-:{unidades:r.unidades.filter(id=>!sel.includes(id)),municao:munResto,itens:itensDeR(r.unidades.filter(id=>!sel.includes(id)),munResto),
-uinfo:Object.fromEntries(Object.entries(r.uinfo||{}).filter(([k])=>!sel.includes(k))),log:[...r.log,entrada('Transferência parcial',`${pats} para ${nomeM(d.id)} (${nr(num)})`)]};
-await updateDoc(doc(db,'reservas',r.id),upd);
-closeModal();toast(`Cautela transferida para ${nomeM(d.id)} (${nr(num)}).`);
+}catch(e){console.error(e);err(e&&e.code==='mudou'?'O pedido mudou ou foi cancelado. Feche e confira de novo.':erroFirebase(e));return;}
+closeModal();toast(`Transferência aceita. A cautela ${nr(num)} agora está com você.`);
+}
+async function recusarTransf(id){
+const r=TI(id);if(!r)return;
+if(!confirm(`Recusar a transferência de ${nomeM(r.userId)}?`))return;
+await updateDoc(doc(db,'reservas',r.id),{transferPara:null,transfer:null,log:[...(r.log||[]),entrada('Transferência recusada',`Recusada por ${nomeM(sess.userId)}`)]});
+toast('Transferência recusada.');
 }
 
 /* ============ Painel do Furriel ============ */
@@ -537,7 +585,7 @@ function vAtivas(){
 const l=D.reservas.filter(r=>r.status==='cautelada').sort((a,b)=>a.devolucao.localeCompare(b.devolucao));
 return `<div class="a-head"><div><h1>Cautelas ativas</h1><p>Material fora da Furrielação, pela ordem de devolução prevista.</p></div></div>
 ${l.length?`<div class="tbl-wrap"><table><thead><tr><th>Nº</th><th>Militar</th><th>Material</th><th>Patrimônios</th><th>Devolução</th><th>Situação</th><th></th></tr></thead><tbody>
-${l.map(r=>`<tr class="hov" data-act="ver" data-id="${r.id}"><td class="mono">${nr(r.num)}</td><td>${esc(nomeM(r.userId))}</td><td>${esc(itensTxt(r))}</td>
+${l.map(r=>`<tr class="hov" data-act="ver" data-id="${r.id}"><td class="mono">${nr(r.num)}</td><td>${esc(nomeM(r.userId))}${r.transferPara?`<br><span class="small c-brass">transferindo para ${esc(nomeM(r.transferPara))}</span>`:''}</td><td>${esc(itensTxt(r))}</td>
 <td class="mono">${(r.unidades||[]).map(id=>esc(unid(id)?.pat||'')).join(', ')}</td><td class="${atrasada(r)?'c-stamp':''}">${fmt(r.devolucao)}</td><td>${stamp(r)}</td>
 <td><button class="btn btn-sm btn-pri" data-act="devolver" data-id="${r.id}">Registrar devolução</button></td></tr>`).join('')}</tbody></table></div>`
 :'<div class="empty">Todo o material está na Furrielação.</div>'}`;
@@ -678,8 +726,10 @@ openModal('Recusar '+nr(r.num),`<form id="f-rec" data-id="${r.id}" class="stack"
 function separar(id){
 const r=R(id);if(!r)return;
 let body=`<form id="f-sep" data-id="${r.id}">
-<div class="busca"><input class="i" type="search" id="sep-q" placeholder="Nº de série, patrimônio, lote ou nome" aria-label="Buscar material" autocomplete="off" enterkeyhint="done">
-<div class="row between small" style="margin-top:.4rem"><span class="muted">Digite e toque Enter para marcar. Funciona com leitor de código de barras.</span><button type="button" class="link" data-act="sepAuto">Marcar automaticamente</button></div></div>`;
+<div class="busca"><label class="sep-lbl" for="sep-q">🔎 Pesquisar material pelo nº de série, nº de patrimônio ou nome</label>
+<input class="i" type="search" id="sep-q" placeholder="Ex.: HT-003, 2405512 ou pistola" aria-label="Pesquisar material" autocomplete="off" enterkeyhint="done">
+<ul class="sep-res" id="sep-res" hidden></ul>
+<div class="row between small" style="margin-top:.4rem"><span class="muted">Toque em "Selecionar" no resultado (ou Enter). Funciona com leitor de código de barras.</span><button type="button" class="link" data-act="sepAuto">Marcar automaticamente</button></div></div>`;
 for(const i of r.itens){
 const tn=tipo(i.tipoId).nome;
 if(isMun(i.tipoId)){
@@ -708,6 +758,25 @@ const q=normTxt(txt);
 document.querySelectorAll('#f-sep .lotes label').forEach(l=>{l.hidden=!!q&&!l.dataset.s.includes(q)&&!(parseInt(l.querySelector('input').value,10)>0);});
 document.querySelectorAll('#f-sep .pick label').forEach(l=>{l.hidden=!!q&&!l.dataset.s.includes(q)&&!l.querySelector('input').checked;});
 }
+function sepResultados(txt){
+const box=$('#sep-res');if(!box)return;const q=normTxt(txt);
+if(!q){box.hidden=true;box.innerHTML='';return;}
+const us=[...document.querySelectorAll('#f-sep .pick label')].filter(l=>l.dataset.s.includes(q));
+const ls=[...document.querySelectorAll('#f-sep .lotes label')].filter(l=>l.dataset.s.includes(q));
+let h=us.slice(0,8).map(l=>{const inp=l.querySelector('input'),u=unid(inp.value)||{pat:'?'};const g=l.closest('.pick');
+return `<li><span><span class="mono">${esc(u.pat)}</span>${u.serie?` <span class="small muted">· série ${esc(u.serie)}</span>`:''}<br><span class="small muted">${esc(tipo(g.dataset.tipo).nome)}</span></span>
+${inp.checked?'<span class="small c-ok">Selecionado ✓</span>':`<button type="button" class="btn btn-sm btn-pri" data-act="sepSel" data-id="${inp.value}">Selecionar</button>`}</li>`;}).join('');
+h+=ls.slice(0,4).map(l=>{const i=l.querySelector('input'),lt=loteDe(i.dataset.lid)||{};return `<li><span><span class="mono">Lote ${esc(lt.lote||'')}</span><br><span class="small muted">${esc(tipo(lt.tipoId).nome)} · ${lt.qtd} cart. em estoque</span></span><button type="button" class="btn btn-sm" data-act="sepLote" data-id="${i.dataset.lid}">Informar quantidade</button></li>`;}).join('');
+if(!h){const u=D.unidades.find(x=>normTxt(x.pat)===q||normTxt(x.serie||'')===q);const r=u&&comQuem(u.id);
+h=`<li class="small">${u?`${esc(u.pat)} (${esc(tipo(u.tipoId).nome)}) não está disponível: ${esc((USTAT[u.status]||[u.status])[0].toLowerCase())}${r?' com '+esc(nomeM(r.userId)):''}.`:'Nenhum material disponível deste pedido corresponde à pesquisa.'}</li>`;}
+box.innerHTML=h;box.hidden=false;
+}
+function sepSelecionar(id){
+const inp=document.querySelector(`#f-sep .pick input[value="${id}"]`);if(!inp)return;const g=inp.closest('.pick'),e=$('#sep-erro');e.textContent='';
+if(!inp.checked&&g.querySelectorAll('input:checked').length>=+g.dataset.q){e.textContent=`Já foram marcados ${g.dataset.q} de ${tipo(g.dataset.tipo).nome}. Desmarque um para trocar.`;return;}
+inp.checked=true;const q=$('#sep-q');if(q){q.value='';q.focus();}sepFiltrar('');sepResultados('');sepContar();
+toast(`${(unid(id)||{pat:''}).pat} selecionado.`);
+}
 function sepEnter(inp){
 const q=normTxt(inp.value),e=$('#sep-erro');e.textContent='';if(!q)return;
 const lts=[...document.querySelectorAll('#f-sep .lotes label')];
@@ -724,7 +793,7 @@ e.textContent=jaMarcado?'Esse item já está marcado.':u?`${u.pat} (${tipo(u.tip
 return;}
 const g=alvo.closest('.pick');
 if(g.querySelectorAll('input:checked').length>=+g.dataset.q){e.textContent=`Já foram marcados ${g.dataset.q} de ${tipo(g.dataset.tipo).nome}.`;return;}
-alvo.querySelector('input').checked=true;inp.value='';sepFiltrar('');sepContar();alvo.scrollIntoView({block:'nearest'});
+alvo.querySelector('input').checked=true;inp.value='';sepFiltrar('');sepResultados('');sepContar();alvo.scrollIntoView({block:'nearest'});
 }
 async function confirmarSeparacao(form){
 const r=R(form.dataset.id);const sel=[],novos=[],mun=[];let parcial=false;const err=m=>{$('#sep-erro').textContent=m;};
@@ -1066,6 +1135,11 @@ telaF:()=>{ui.tela='furriel';loginMsg='';fase='login';render();},
 telaC:()=>{ui.tela='cadete';loginMsg='';fase='login';render();},
 irCadastroF:()=>{fase='cadastroF';render();},
 transferir:el=>transferir(el.dataset.id),
+cancelarTransf:el=>cancelarTransf(el.dataset.id),
+aceitarTransf:el=>aceitarTransf(el.dataset.id),
+recusarTransf:el=>recusarTransf(el.dataset.id),
+sepSel:el=>sepSelecionar(el.dataset.id),
+sepLote:el=>{const i=document.querySelector(`#f-sep .lotes input[data-lid="${el.dataset.id}"]`);if(i){const q=$('#sep-q');if(q)q.value='';sepFiltrar('');sepResultados('');i.focus();i.scrollIntoView({block:'center'});}},
 novoMun:()=>formMun(null),
 editMun:el=>formMun(tipo(el.dataset.id)),
 entMun:el=>{ui.aberto=el.dataset.id;formEntrada(tipo(el.dataset.id));},
@@ -1140,6 +1214,7 @@ bootstrapping=false;await aoMudarLogin(auth.currentUser);
 'f-rec':async(fd,f)=>{const r=R(f.dataset.id);await updateDoc(doc(db,'reservas',r.id),{status:'recusada',log:[...r.log,entrada('Recusada',String(fd.get('m')).trim())]});closeModal();toast(`${nr(r.num)} recusada.`);},
 'f-sep':(fd,f)=>confirmarSeparacao(f),
 'f-trf':(fd,f)=>confirmarTransf(f,fd),
+'f-aceite':(fd,f)=>confirmarAceite(f,fd),
 'f-mun':async(fd,f)=>{const nome=String(fd.get('nome')).trim(),desc=String(fd.get('desc')||'').trim(),limite=Math.max(1,parseInt(fd.get('lim'),10)||100),oculto=!fd.get('vis');
 if(f.dataset.id){await updateDoc(doc(db,'tipos',f.dataset.id),{nome,desc,limite,oculto});closeModal();toast('Calibre atualizado.');return;}
 const tref=doc(collection(db,'tipos')),b=writeBatch(db),lote=String(fd.get('lote')).trim(),q=Math.max(0,parseInt(fd.get('q'),10)||0);
@@ -1236,7 +1311,7 @@ if(v>0&&!ui.cart[t.id]&&contagem(t.id).livre<=0)v=0;ui.cart[t.id]=v;render();}
 document.addEventListener('change',e=>{if(e.target.closest&&e.target.closest('#f-sep .pick'))sepContar();});
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='sep-q'){e.preventDefault();sepEnter(e.target);}});
 document.addEventListener('input',e=>{
-if(e.target.id==='sep-q'){sepFiltrar(e.target.value);$('#sep-erro').textContent='';return;}
+if(e.target.id==='sep-q'){sepFiltrar(e.target.value);sepResultados(e.target.value);$('#sep-erro').textContent='';return;}
 if(e.target.closest&&e.target.closest('#f-sep .lotes')){sepContar();return;}
 if(e.target.dataset&&e.target.dataset.inpmun){const b=e.target.closest('.dev-mun'),q=+b.dataset.q,d=parseInt(e.target.value,10)||0,c=b.querySelector('.calc');const bad=d<0||d>q;
 c.textContent=bad?`A sobra não pode passar de ${q} cartuchos.`:d?`Utilizados: ${q-d} · sobra devolvida: ${d}`:`Sem sobra: ${q} cartuchos utilizados.`;c.classList.toggle('bad',bad);return;}
@@ -1265,13 +1340,19 @@ try{await updateDoc(doc(db,'reservas',r.id),{uinfo});}catch(e){console.warn('uin
 function escutarTudo(perfil){
 const furr=perfil==='furriel';
 const fontes=furr?[['users',collection(db,'users')],['tipos',collection(db,'tipos')],['unidades',collection(db,'unidades')],['reservas',collection(db,'reservas')],['lotes',collection(db,'lotes')],['catalogo',doc(db,'config','catalogo')]]
-:[['users',collection(db,'users')],['tipos',collection(db,'tipos')],['reservas',query(collection(db,'reservas'),where('userId','==',sess.userId))],['catalogo',doc(db,'config','catalogo')]];
+:[['users',collection(db,'users')],['tipos',collection(db,'tipos')],['reservas',query(collection(db,'reservas'),where('userId','==',sess.userId))],['transfIn',query(collection(db,'reservas'),where('transferPara','==',sess.userId))],['catalogo',doc(db,'config','catalogo')]];
 const cols=fontes.map(f=>f[0]);
 fontes.forEach(([nome,ref])=>{
 const pronto=()=>{loaded[nome]=true;if(cols.every(c=>loaded[c])){fase='app';render();if(furr){publicarCatalogo();completarUinfo();}}};
 if(nome==='catalogo'){
 unsubs.push(onSnapshot(ref,sn=>{D.catalogo=sn.exists()?((sn.data()||{}).disp||{}):{};const prim=!loaded[nome];pronto();if(!prim&&fase==='app'&&!furr&&!modal.open)render();},
 err=>{console.warn('catálogo',err);D.catalogo={};pronto();}));
+return;}
+if(nome==='transfIn'){
+unsubs.push(onSnapshot(ref,snap=>{const prim=!loaded[nome];
+if(!prim)snap.docChanges().forEach(ch=>{if(ch.type==='added'){const r=ch.doc.data();avisar('Pedido de transferência',`${nomeM(r.userId)} quer transferir material para você. Abra o SICAM para aceitar.`);}});
+D.transfIn=snap.docs.map(d=>({id:d.id,...d.data()}));if(prim)pronto();else if(fase==='app'&&!modal.open)render();},
+err=>{console.warn('transferências',err);D.transfIn=[];pronto();}));
 return;}
 const un=onSnapshot(ref,snap=>{
 const primeira=!loaded[nome];
@@ -1288,6 +1369,7 @@ if(eu&&eu.perfil==='furriel'&&ch.type==='modified'&&r.status==='separada'&&r.ass
 avisar(`${nr(r.num)} assinada`,`${nomeM(r.userId)} assinou a retirada. Confira e confirme a entrega.`);
 if(eu&&eu.perfil!=='furriel'&&ch.type==='modified'&&r.userId===eu.id){
 const old=D.reservas.find(x=>x.id===r.id);
+if(old&&old.transferPara&&!r.transferPara){const ult=(r.log||[]).slice(-1)[0]||{};if(ult.a==='Transferência recusada')avisar('Transferência recusada',`${nomeM(old.transferPara)} recusou a transferência de ${nr(r.num)}.`);else if(ult.a!=='Transferência cancelada')avisar('Transferência aceita',`${nomeM(old.transferPara)} aceitou e assinou o recebimento.`);}
 if(old&&old.status!==r.status&&r.status!=='cancelada'&&r.status!=='transferida')avisar(`Solicitação ${nr(r.num)}`,(ST[r.status]||[r.status])[0]);
 }
 });
