@@ -266,9 +266,11 @@ if(prontas.length)h+=`<div class="sec-h"><h2>Pronto para retirada</h2></div>`+pr
 ${r.assinatura?`<p class="small muted" style="margin-top:.5rem">Você assinou às ${fmt(r.assinatura.em)}. Aguarde o Furriel confirmar a entrega.</p>`
 :`<p class="small" style="margin-top:.5rem">Na Furrielação, confira o material e assine a retirada.</p><button class="btn btn-pri btn-block" style="margin-top:.6rem" data-act="assinar" data-id="${r.id}">Assinar retirada</button>`}</div>`).join('');
 if(comigo.length){
-h+=`<div class="sec-h"><h2>Cautelado com você</h2></div>`+comigo.map(r=>`<button class="card clickable active-cautela${atrasada(r)?' late':''}" data-act="ver" data-id="${r.id}" style="margin-bottom:.6rem">
+h+=`<div class="sec-h"><h2>Cautelado com você</h2></div>`+comigo.map(r=>`<div class="card active-cautela${atrasada(r)?' late':''}" style="margin-bottom:.6rem">
+<button class="clickable" style="background:none;border:0;padding:0" data-act="ver" data-id="${r.id}">
 <div class="card-t"><div><span class="nr">${nr(r.num)}</span>${itensLi(r)}</div>${stamp(r)}</div>
-<p class="small ${atrasada(r)?'c-stamp':'muted'}" style="margin-top:.4rem">Devolver até ${fmt(r.devolucao)}</p></button>`).join('');
+<p class="small ${atrasada(r)?'c-stamp':'muted'}" style="margin-top:.4rem">Devolver até ${fmt(r.devolucao)}</p></button>
+<div class="row" style="margin-top:.7rem;justify-content:flex-end"><button class="btn btn-sm" data-act="ver" data-id="${r.id}">Ver detalhes</button><button class="btn btn-sm btn-pri" data-act="transferir" data-id="${r.id}">Transferir cautela</button></div></div>`).join('');
 h+=`<div class="sec-h"><h2>Material da Furrielação</h2></div>`;
 }
 const vis=D.tipos.filter(t=>!t.oculto);
@@ -326,6 +328,7 @@ const tot=D.reservas.filter(r=>r.userId===u.id);
 return `<div class="card"><dl class="meta" style="margin:0">
 <dt>Nome</dt><dd>${esc(nomeM(u.id))}</dd><dt>Usuário</dt><dd class="mono">${esc(u.login)}</dd><dt>Pelotão</dt><dd>${esc(u.pelotao)}</dd>
 <dt>Solicitações</dt><dd>${tot.length} no total</dd></dl></div>
+<p class="small muted" style="margin-top:.8rem">${tot.some(r=>r.status==='cautelada')?'Para passar um material cautelado a outro cadete, use "Transferir cautela" em Material → Cautelado com você.':'A opção "Transferir cautela" aparece em Material → Cautelado com você, depois que a Furrielação entregar o material a você.'}</p>
 <div class="stack" style="margin-top:1rem">${botaoAvisos()}${bioOk?(bioLocal(u.id)&&(u.passkeys||[]).some(k=>k.id===bioLocal(u.id))?'<p class="small muted">Assinatura por digital/Face ID: ativada neste celular.</p>':'<button class="btn btn-block" data-act="ativarBio">Ativar assinatura por digital/Face ID neste celular</button>'):''}<button class="btn btn-block" data-act="senha">Trocar minha senha</button><button class="btn btn-block" data-act="sair">Sair</button></div>`;
 }
 function abrirSolicitacao(){
