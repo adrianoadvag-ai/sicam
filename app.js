@@ -24,6 +24,14 @@ const ehLegado=email=>String(email||'').toLowerCase().endsWith(DOMINIO);
 const dominioOk=email=>DOMINIOS.some(d=>String(email||'').toLowerCase().endsWith('@'+d));
 const emailUser=u=>u.email||emailDe(u.login);
 let aguardandoUnsub=null;
+const b64u=buf=>{const b=new Uint8Array(buf);let t='';for(let i=0;i<b.length;i++)t+=String.fromCharCode(b[i]);return btoa(t).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');};
+const ub64u=x=>{x=x.replace(/-/g,'+').replace(/_/g,'/');x+='='.repeat((4-x.length%4)%4);return Uint8Array.from(atob(x),c=>c.charCodeAt(0));};
+const bioKey=uid=>'sicam.bio.'+uid;
+const bioLocal=uid=>{try{return localStorage.getItem(bioKey(uid));}catch(e){return null;}};
+let bioOk=false;
+(async()=>{try{bioOk=!!(window.PublicKeyCredential&&PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable&&await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());}catch(e){bioOk=false;}})();
+const assinada=r=>r.status==='separada'&&!!r.assinatura;
+const METODO={biometria:'com digital/Face ID no celular do militar',senha:'com senha no celular do militar',balcao:'com senha do militar no computador da Furrielação'};
 const nowISO=()=>new Date().toISOString();
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=iso=>{if(!iso)return'—';const d=new Date(iso);return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});};
@@ -40,7 +48,7 @@ const itensTxt=r=>(r.itens||[]).map(i=>i.qtd+'× '+tipo(i.tipoId).nome).join(', 
 const itensLi=r=>'<ul class="itens">'+(r.itens||[]).map(i=>`<li><b>${i.qtd}×</b><span>${esc(tipo(i.tipoId).nome)}</span></li>`).join('')+'</ul>';
 const ST={pendente:['Pendente','c-brass'],aprovada:['Aprovada','c-blue'],separada:['Pronta para retirada','c-blue'],
   cautelada:['Cautelado','c-ok'],devolvida:['Devolvido','c-muted'],recusada:['Recusada','c-stamp'],cancelada:['Cancelada','c-muted']};
-const stamp=(r,lg)=>atrasada(r)?`<span class="stamp c-stamp${lg?' lg':''}">Em atraso</span>`:`<span class="stamp ${(ST[r.status]||['?',''])[1]}${lg?' lg':''}">${(ST[r.status]||[r.status])[0]}</span>`;
+const stamp=(r,lg)=>assinada(r)?`<span class="stamp c-ok${lg?' lg':''}">Assinada</span>`:atrasada(r)?`<span class="stamp c-stamp${lg?' lg':''}">Em atraso</span>`:`<span class="stamp ${(ST[r.status]||['?',''])[1]}${lg?' lg':''}">${(ST[r.status]||[r.status])[0]}</span>`;
 
 function contagem(tipoId){
   const c={total:0,disponivel:0,separado:0,cautelado:0,manutencao:0,extraviado:0};
@@ -183,7 +191,12 @@ function vApp(){
 }
 function vEquip(u){
   const comigo=D.reservas.filter(r=>r.userId===u.id&&r.status==='cautelada');
+  const prontas=D.reservas.filter(r=>r.userId===u.id&&r.status==='separada');
   let h='';
+  if(prontas.length)h+=`<div class="sec-h"><h2>Pronto para retirada</h2></div>`+prontas.map(r=>`<div class="card active-cautela" style="margin-bottom:.6rem;border-left-color:var(--blue)">
+    <div class="card-t"><div><span class="nr">${nr(r.num)}</span>${itensLi(r)}</div>${stamp(r)}</div>
+    ${r.assinatura?`<p class="small muted" style="margin-top:.5rem">Você assinou às ${fmt(r.assinatura.em)}. Aguarde o Furriel confirmar a entrega.</p>`
+      :`<p class="small" style="margin-top:.5rem">Na Furrielação, confira o material e assine a retirada.</p><button class="btn btn-pri btn-block" style="margin-top:.6rem" data-act="assinar" data-id="${r.id}">Assinar retirada</button>`}</div>`).join('');
   if(comigo.length){
     h+=`<div class="sec-h"><h2>Cautelado com você</h2></div>`+comigo.map(r=>`<button class="card clickable active-cautela${atrasada(r)?' late':''}" data-act="ver" data-id="${r.id}" style="margin-bottom:.6rem">
       <div class="card-t"><div><span class="nr">${nr(r.num)}</span>${itensLi(r)}</div>${stamp(r)}</div>
@@ -240,7 +253,7 @@ function vPerfil(u){
   return `<div class="card"><dl class="meta" style="margin:0">
     <dt>Nome</dt><dd>${esc(nomeM(u.id))}</dd><dt>Usuário</dt><dd class="mono">${esc(u.login)}</dd><dt>Pelotão</dt><dd>${esc(u.pelotao)}</dd>
     <dt>Solicitações</dt><dd>${tot.length} no total</dd></dl></div>
-    <div class="stack" style="margin-top:1rem">${botaoAvisos()}<button class="btn btn-block" data-act="senha">Trocar minha senha</button><button class="btn btn-block" data-act="sair">Sair</button></div>`;
+    <div class="stack" style="margin-top:1rem">${botaoAvisos()}${bioOk?(bioLocal(u.id)&&(u.passkeys||[]).some(k=>k.id===bioLocal(u.id))?'<p class="small muted">Assinatura por digital/Face ID: ativada neste celular.</p>':'<button class="btn btn-block" data-act="ativarBio">Ativar assinatura por digital/Face ID neste celular</button>'):''}<button class="btn btn-block" data-act="senha">Trocar minha senha</button><button class="btn btn-block" data-act="sair">Sair</button></div>`;
 }
 function abrirSolicitacao(){
   const itens=Object.entries(ui.cart).filter(([,q])=>q>0);
@@ -284,7 +297,7 @@ function trocarSenha(){
 function verReserva(id){
   const r=D.reservas.find(x=>x.id===id); if(!r)return;
   const u=me(), admin=u.perfil==='furriel';
-  const passos=[['Solicitada','Solicitada'],['Aprovada','Aprovada pelo Furriel'],['Separada','Material separado'],['Cautelada','Cautela assinada'],['Devolvida','Devolvido']];
+  const passos=[['Solicitada','Solicitada'],['Aprovada','Aprovada pelo Furriel'],['Separada','Material separado'],['Assinada','Retirada assinada pelo militar'],['Cautelada','Entrega confirmada pelo Furriel'],['Devolvida','Devolvido']];
   const log=r.log||[];const find=a=>log.find(l=>l.a===a);
   const fim=log.find(l=>l.a==='Recusada'||l.a==='Cancelada');
   let tl='<ol class="tl">';
@@ -305,7 +318,8 @@ function verReserva(id){
     <h3 style="margin-top:1.1rem">Andamento</h3>${tl}`;
   let foot='';
   if(!admin&&['pendente','aprovada'].includes(r.status))foot=`<button class="btn btn-warn" data-act="cancelar" data-id="${r.id}">Cancelar solicitação</button>`;
-  if(!admin&&r.status==='separada')foot=`<p class="small muted" style="margin-right:auto">Vá à Furrielação para assinar a cautela e retirar o material.</p>`;
+  if(!admin&&r.status==='separada'&&!r.assinatura)foot=`<p class="small muted" style="margin-right:auto">Assine quando estiver na Furrielação, com o material na sua frente.</p><button class="btn btn-pri" data-act="assinar" data-id="${r.id}">Assinar retirada</button>`;
+  if(!admin&&assinada(r))foot=`<p class="small muted" style="margin-right:auto">Assinado. Aguarde o Furriel confirmar a entrega.</p>`;
   if(admin)foot=acoesAdmin(r,true);
   openModal('Solicitação '+nr(r.num),body,foot);
 }
@@ -337,7 +351,8 @@ function acoesAdmin(r,inModal){
   const cls='btn'+(inModal?'':' btn-sm');
   if(r.status==='pendente')return `<button class="${cls} btn-warn" data-act="recusar" data-id="${r.id}">Recusar</button><button class="${cls} btn-pri" data-act="aprovar" data-id="${r.id}">Aprovar</button>`;
   if(r.status==='aprovada')return `<button class="${cls} btn-pri" data-act="separar" data-id="${r.id}">Separar material</button>`;
-  if(r.status==='separada')return `<button class="${cls} btn-pri" data-act="cautelar" data-id="${r.id}">Efetivar cautela</button>`;
+  if(r.status==='separada')return r.assinatura?`<button class="${cls} btn-pri" data-act="confirmarEntrega" data-id="${r.id}">Confirmar entrega</button>`
+    :`<button class="${cls}" data-act="cautelar" data-id="${r.id}">Assinar no balcão</button>`;
   if(r.status==='cautelada')return `<button class="${cls} btn-pri" data-act="devolver" data-id="${r.id}">Registrar devolução</button>`;
   return inModal?`<button class="btn" data-act="fechar">Fechar</button>`:'';
 }
@@ -347,6 +362,8 @@ function cardAdmin(r){
       <div class="card-t"><div><span class="nr">${nr(r.num)}</span><p style="font-weight:600">${esc(nomeM(r.userId))}</p></div>${stamp(r)}</div>
       ${itensLi(r)}
       <dl class="meta"><dt>Retirada</dt><dd>${fmt(r.retirada)}</dd><dt>Devolução</dt><dd class="${atrasada(r)?'c-stamp':''}">${fmt(r.devolucao)}</dd><dt>Finalidade</dt><dd>${esc(r.finalidade)}</dd></dl>
+      ${r.status==='separada'?(r.assinatura?`<p class="small c-ok" style="margin-top:.5rem">Assinado pelo militar às ${fmt(r.assinatura.em)}, ${r.assinatura.metodo==='biometria'?'com digital/Face ID':'com senha'}.</p>`
+        :'<p class="small muted" style="margin-top:.5rem">Aguardando o militar assinar no celular.</p>'):''}
     </button>
     <div class="row" style="margin-top:.7rem;justify-content:flex-end">${acoesAdmin(r)}</div></div>`;
 }
@@ -381,7 +398,7 @@ function vSolic(){
     return `<section class="col"><div class="col-h"><h3>${t}</h3><span class="tag">${l.length}</span></div>
     ${l.length?l.map(cardAdmin).join(''):`<div class="empty small">${help}</div>`}</section>`;};
   return `<div class="a-head"><div><h1>Solicitações</h1><p>Cada pedido avança da esquerda para a direita. Ordenado pela hora de retirada.</p></div></div>
-  <div class="cols">${col('pendente','Aguardando aprovação','Nenhum pedido novo.')}${col('aprovada','Aprovadas – separar','Nada para separar.')}${col('separada','Prontas – cautelar','Ninguém aguardando retirada.')}</div>`;
+  <div class="cols">${col('pendente','Aguardando aprovação','Nenhum pedido novo.')}${col('aprovada','Aprovadas – separar','Nada para separar.')}${col('separada','Prontas – retirada','Ninguém aguardando retirada.')}</div>`;
 }
 function vAtivas(){
   const l=D.reservas.filter(r=>r.status==='cautelada').sort((a,b)=>a.devolucao.localeCompare(b.devolucao));
@@ -503,14 +520,85 @@ async function confirmarSeparacao(form){
 }
 function cautelar(id){
   const r=R(id);if(!r)return;
-  openModal('Efetivar cautela – '+nr(r.num),`<form id="f-caut" data-id="${r.id}" class="stack" autocomplete="off">
+  openModal('Assinar no balcão – '+nr(r.num),`<form id="f-caut" data-id="${r.id}" class="stack" autocomplete="off">
     <div class="ficha"><p style="font-weight:600">${esc(nomeM(r.userId))}</p><p class="small muted">${esc(user(r.userId).pelotao)}</p>
       <ul class="itens">${r.unidades.map(uid=>{const u=unid(uid)||{pat:'?'};return `<li><span class="mono">${esc(u.pat)}</span><span>${esc(tipo(u.tipoId).nome)}${u.serie?` <span class="small muted">(série ${esc(u.serie)})</span>`:''}</span></li>`;}).join('')}</ul>
       <dl class="meta"><dt>Devolver até</dt><dd>${fmt(r.devolucao)}</dd></dl></div>
-    <p class="small">O militar confere o material na sua frente e digita a própria senha. Isso substitui a assinatura no livro.</p>
+    <p class="small">Use só se o militar estiver sem celular. Ele confere o material na sua frente e digita a própria senha aqui. Isso vale como assinatura dele e como sua confirmação da entrega.</p>
     <label class="f"><span>Senha de ${esc(nomeM(r.userId))}</span><input class="i" type="password" name="s" required autocomplete="new-password"></label>
     <p class="erro" id="caut-erro"></p>
     <button class="btn btn-pri btn-block">Assinar e entregar material</button></form>`);
+}
+function textoAssinatura(r,em){
+  const us=(r.unidades||[]).map(id=>{const u=unid(id)||{pat:id};return u.pat+(u.serie?'/'+u.serie:'');}).join(', ');
+  return `SICAM | Cautela ${nr(r.num)} | ${nomeM(r.userId)} | Material: ${us} | Devolução até ${fmt(r.devolucao)} | Assinado em ${em}`;
+}
+function assinar(id){
+  const r=R(id);if(!r||r.status!=='separada'||r.assinatura)return;
+  const u=me();const temBio=bioOk&&bioLocal(u.id)&&(u.passkeys||[]).some(k=>k.id===bioLocal(u.id));
+  openModal('Assinar retirada – '+nr(r.num),`<div class="stack">
+    <div class="ficha"><p style="font-weight:600">${esc(nomeM(r.userId))}</p>
+      <ul class="itens">${r.unidades.map(uid=>{const x=unid(uid)||{pat:'?'};return `<li><span class="mono">${esc(x.pat)}</span><span>${esc(tipo(x.tipoId).nome)}${x.serie?` <span class="small muted">(série ${esc(x.serie)})</span>`:''}</span></li>`;}).join('')}</ul>
+      <dl class="meta"><dt>Devolver até</dt><dd>${fmt(r.devolucao)}</dd></dl></div>
+    <p class="aviso">Declaro que recebi o material acima, conferi os números e o estado de conservação, e me responsabilizo pela guarda e pela devolução até ${fmt(r.devolucao)}.</p>
+    ${temBio?`<button class="btn btn-pri btn-block" data-act="assinarBio" data-id="${r.id}">Assinar com digital / Face ID</button>`:''}
+    <form id="f-assinar" data-id="${r.id}" class="stack" autocomplete="off">
+      <label class="f"><span>${temBio?'Ou assine com sua senha':'Assine com sua senha'}</span><input class="i" type="password" name="s" required autocomplete="current-password"></label>
+      <p class="erro" id="ass-erro"></p>
+      <button class="btn ${temBio?'':'btn-pri '}btn-block">Assinar com senha</button></form>
+    ${bioOk&&!temBio?'<p class="small muted">Dica: em Perfil você pode ativar a assinatura por digital/Face ID neste celular.</p>':''}
+  </div>`,'','Assine só com o material na sua frente.');
+}
+async function gravarAssinatura(r,ass,obs){
+  await updateDoc(doc(db,'reservas',r.id),{assinatura:ass,log:[...r.log,{t:ass.em,a:'Assinada',por:sess.userId,obs}]});
+  closeModal();toast('Retirada assinada. Aguarde o Furriel confirmar a entrega.');
+}
+async function assinarSenha(form,fd){
+  const r=R(form.dataset.id);const u=auth.currentUser;
+  try{await reauthenticateWithCredential(u,EmailAuthProvider.credential(u.email,String(fd.get('s'))));}
+  catch(e){$('#ass-erro').textContent=(e.code==='auth/invalid-credential'||e.code==='auth/wrong-password')?'Senha incorreta.':erroFirebase(e);return;}
+  const em=nowISO(),dados=textoAssinatura(r,em);
+  const hash=b64u(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(dados)));
+  await gravarAssinatura(r,{por:sess.userId,em,metodo:'senha',dados,hash,aparelho:navigator.userAgent.slice(0,160)},'Com senha no celular do militar');
+}
+async function assinarBio(id){
+  const r=R(id);const credId=bioLocal(sess.userId);if(!r||!credId)return;
+  const em=nowISO(),dados=textoAssinatura(r,em);
+  const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(dados));
+  let a;
+  try{a=await navigator.credentials.get({publicKey:{challenge:hash,rpId:location.hostname,allowCredentials:[{type:'public-key',id:ub64u(credId)}],userVerification:'required',timeout:60000}});}
+  catch(e){const el=$('#ass-erro');if(el)el.textContent='A digital/Face ID não foi confirmada. Tente de novo ou assine com a senha.';return;}
+  await gravarAssinatura(r,{por:sess.userId,em,metodo:'biometria',dados,hash:b64u(hash),credId:a.id,
+    authData:b64u(a.response.authenticatorData),clientData:b64u(a.response.clientDataJSON),sig:b64u(a.response.signature),aparelho:navigator.userAgent.slice(0,160)},'Com digital/Face ID no celular do militar');
+}
+async function ativarBio(){
+  const u=me();
+  let c;
+  try{c=await navigator.credentials.create({publicKey:{challenge:crypto.getRandomValues(new Uint8Array(32)),rp:{name:'SICAM',id:location.hostname},
+    user:{id:new TextEncoder().encode(u.id),name:emailUser(u),displayName:nomeM(u.id)},pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
+    authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'preferred'},timeout:60000,attestation:'none'}});}
+  catch(e){toast('Não foi possível ativar. Confira se o celular tem digital ou Face ID cadastrados.',true);return;}
+  let pk=null,alg=null;try{pk=c.response.getPublicKey?b64u(c.response.getPublicKey()):null;alg=c.response.getPublicKeyAlgorithm?c.response.getPublicKeyAlgorithm():null;}catch(e){}
+  const lista=[...(u.passkeys||[]),{id:c.id,publicKey:pk,alg,criadoEm:nowISO(),aparelho:navigator.userAgent.slice(0,160)}].slice(-5);
+  await updateDoc(doc(db,'users',u.id),{passkeys:lista});
+  try{localStorage.setItem(bioKey(u.id),c.id);}catch(e){}
+  toast('Assinatura por digital/Face ID ativada neste celular.');render();
+}
+function confirmarEntrega(id){
+  const r=R(id);if(!r||!r.assinatura)return;const a=r.assinatura;
+  openModal('Confirmar entrega – '+nr(r.num),`<form id="f-entrega" data-id="${r.id}" class="stack">
+    <div class="ficha">${stamp(r)}<p style="font-weight:600">${esc(nomeM(r.userId))}</p><p class="small muted">${esc(user(r.userId).pelotao)}</p>
+      <ul class="itens">${r.unidades.map(uid=>{const x=unid(uid)||{pat:'?'};return `<li><span class="mono">${esc(x.pat)}</span><span>${esc(tipo(x.tipoId).nome)}${x.serie?` <span class="small muted">(série ${esc(x.serie)})</span>`:''}</span></li>`;}).join('')}</ul>
+      <dl class="meta"><dt>Assinado</dt><dd>${fmt(a.em)}, ${esc(METODO[a.metodo]||a.metodo)}</dd><dt>Devolver até</dt><dd>${fmt(r.devolucao)}</dd></dl></div>
+    <label class="check"><input type="checkbox" name="ok" required><span>Conferi a identidade do militar e entreguei o material listado.</span></label>
+    <button class="btn btn-pri btn-block">Confirmar entrega</button></form>`);
+}
+async function efetivarEntrega(form){
+  const r=R(form.dataset.id);if(!r||!r.assinatura||r.status!=='separada')return;
+  const b=writeBatch(db);const em=nowISO();
+  r.unidades.forEach(id=>b.update(doc(db,'unidades',id),{status:'cautelado'}));
+  b.update(doc(db,'reservas',r.id),{status:'cautelada',anuencia:{por:sess.userId,em},log:[...r.log,entrada('Cautelada','Entrega confirmada pelo Furriel')]});
+  await b.commit();closeModal();toast(`Cautela ${nr(r.num)} efetivada.`);
 }
 async function comAuthSecundario(fn){
   const app2=initializeApp(SICAM_FIREBASE,'sec-'+Date.now());
@@ -523,7 +611,9 @@ async function confirmarCautela(form,fd){
   catch(e){$('#caut-erro').textContent=e.code==='auth/too-many-requests'?erroFirebase(e):'Senha incorreta. Peça ao militar para digitar de novo.';return;}
   const b=writeBatch(db);
   r.unidades.forEach(id=>b.update(doc(db,'unidades',id),{status:'cautelado'}));
-  b.update(doc(db,'reservas',r.id),{status:'cautelada',log:[...r.log,entrada('Cautelada','Assinada com senha do militar')]});
+  const em=nowISO();
+  b.update(doc(db,'reservas',r.id),{status:'cautelada',assinatura:{por:r.userId,em,metodo:'balcao',registradoPor:sess.userId},anuencia:{por:sess.userId,em},
+    log:[...r.log,{t:em,a:'Assinada',por:r.userId,obs:'Com senha no computador da Furrielação'},entrada('Cautelada','Entrega confirmada pelo Furriel')]});
   await b.commit();closeModal();toast(`Cautela ${nr(r.num)} registrada.`);
 }
 function devolver(id){
@@ -695,9 +785,9 @@ async function carregarExemplo(){
 function exportarCSV(){
   const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
   const when=(r,a)=>{const l=(r.log||[]).find(x=>x.a===a);return l?fmt(l.t):'';};
-  const rows=[['Nº','Militar','Pelotão','Material','Patrimônios','Finalidade','Retirada prevista','Devolução prevista','Situação','Solicitada','Cautelada','Devolvida','Observação']]
+  const rows=[['Nº','Militar','Pelotão','Material','Patrimônios','Finalidade','Retirada prevista','Devolução prevista','Situação','Solicitada','Assinada','Forma de assinatura','Entrega confirmada','Devolvida','Observação']]
     .concat([...D.reservas].sort((a,b)=>a.num-b.num).map(r=>[nr(r.num),nomeM(r.userId),user(r.userId).pelotao,itensTxt(r),(r.unidades||[]).map(id=>unid(id)?.pat).join(' '),r.finalidade,fmt(r.retirada),fmt(r.devolucao),
-      atrasada(r)?'Em atraso':(ST[r.status]||[r.status])[0],when(r,'Solicitada'),when(r,'Cautelada'),when(r,'Devolvida'),((r.log||[]).find(l=>l.a==='Devolvida'||l.a==='Recusada')||{}).obs||r.obs]));
+      atrasada(r)?'Em atraso':(ST[r.status]||[r.status])[0],when(r,'Solicitada'),when(r,'Assinada'),r.assinatura?(METODO[r.assinatura.metodo]||r.assinatura.metodo):'',when(r,'Cautelada'),when(r,'Devolvida'),((r.log||[]).find(l=>l.a==='Devolvida'||l.a==='Recusada')||{}).obs||r.obs]));
   const csv='\ufeff'+rows.map(r=>r.map(q).join(';')).join('\r\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   a.download='sicam-historico-'+new Date().toISOString().slice(0,10)+'.csv';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
@@ -736,6 +826,10 @@ const acts={
   importar:abrirImportar,
   impConfirmar:el=>confirmarImportacao(el),
   cat:el=>{ui.cat=el.dataset.c;render();},
+  assinar:el=>assinar(el.dataset.id),
+  assinarBio:el=>assinarBio(el.dataset.id),
+  ativarBio:()=>ativarBio(),
+  confirmarEntrega:el=>confirmarEntrega(el.dataset.id),
   novaUnid:async el=>{const t=tipo(el.dataset.id);const n=D.unidades.filter(u=>u.tipoId===t.id).length+1;
     const pat=prompt('Nº de patrimônio da nova unidade',(t.prefixo||'UN')+'-'+String(n).padStart(3,'0'));if(!pat)return;
     if(D.unidades.some(u=>u.pat.toLowerCase()===pat.trim().toLowerCase())){toast('Esse patrimônio já está cadastrado.',true);return;}
@@ -775,6 +869,8 @@ const forms={
   'f-rec':async(fd,f)=>{const r=R(f.dataset.id);await updateDoc(doc(db,'reservas',r.id),{status:'recusada',log:[...r.log,entrada('Recusada',String(fd.get('m')).trim())]});closeModal();toast(`${nr(r.num)} recusada.`);},
   'f-sep':(fd,f)=>confirmarSeparacao(f),
   'f-caut':(fd,f)=>confirmarCautela(f,fd),
+  'f-assinar':(fd,f)=>assinarSenha(f,fd),
+  'f-entrega':(fd,f)=>efetivarEntrega(f),
   'f-dev':(fd,f)=>confirmarDevolucao(f,fd),
   'f-tipo':async fd=>{const tref=doc(collection(db,'tipos')),pre=String(fd.get('pre')).trim().toUpperCase();
     const q=Math.max(1,Math.min(300,+fd.get('q')||1));const b=writeBatch(db);
@@ -848,6 +944,8 @@ function escutarTudo(){
           const r={id:ch.doc.id,...ch.doc.data()};
           if(eu&&eu.perfil==='furriel'&&ch.type==='added'&&r.status==='pendente'&&r.userId!==eu.id)
             avisar(`Nova solicitação ${nr(r.num)}`,`${nomeM(r.userId)}: ${itensTxt(r)}`);
+          if(eu&&eu.perfil==='furriel'&&ch.type==='modified'&&r.status==='separada'&&r.assinatura&&!(D.reservas.find(x=>x.id===r.id)||{}).assinatura)
+            avisar(`${nr(r.num)} assinada`,`${nomeM(r.userId)} assinou a retirada. Confira e confirme a entrega.`);
           if(eu&&eu.perfil!=='furriel'&&ch.type==='modified'&&r.userId===eu.id){
             const old=D.reservas.find(x=>x.id===r.id);
             if(old&&old.status!==r.status&&r.status!=='cancelada')avisar(`Solicitação ${nr(r.num)}`,(ST[r.status]||[r.status])[0]);
