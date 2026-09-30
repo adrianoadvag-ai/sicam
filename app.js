@@ -1,14 +1,16 @@
 import { initializeApp, deleteApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, initializeAuth, inMemoryPersistence, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  signOut, reauthenticateWithCredential, EmailAuthProvider, updatePassword } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+  signOut, reauthenticateWithCredential, EmailAuthProvider, updatePassword, sendEmailVerification, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, onSnapshot, writeBatch, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { SICAM_FIREBASE } from './config.js';
+import * as CFG from './config.js';
+const SICAM_FIREBASE=CFG.SICAM_FIREBASE;
+const DOMINIOS=((CFG.SICAM_OPCOES&&CFG.SICAM_OPCOES.dominios)||['pm.pr.gov.br']).map(d=>d.toLowerCase());
 
 /* ============ Estado ============ */
 const $=s=>document.querySelector(s);
 const configurado=SICAM_FIREBASE&&SICAM_FIREBASE.apiKey&&!/COLE/i.test(SICAM_FIREBASE.apiKey);
 let app,auth,db;
-let fase=configurado?'carregando':'naoconfig'; // naoconfig | carregando | setup | login | app | erro
+let fase=configurado?'carregando':'naoconfig'; // naoconfig | carregando | setup | login | cadastro | verificar | aguardando | app | erro
 let erroMsg='', loginMsg='';
 let D={users:[],tipos:[],unidades:[],reservas:[]};
 let sess=null, bootstrapping=false, unsubs=[], loaded={};
@@ -17,7 +19,11 @@ const ui={view:null,cart:{},q:'',fs:'todos'};
 /* ============ Utilidades ============ */
 const DOMINIO='@sicam.apmg';
 const normLogin=s=>String(s||'').trim().toLowerCase().replace(/\s+/g,'');
-const emailDe=login=>normLogin(login)+DOMINIO;
+const emailDe=x=>{const t=String(x||'').trim().toLowerCase();return t.includes('@')?t:normLogin(t)+DOMINIO;};
+const ehLegado=email=>String(email||'').toLowerCase().endsWith(DOMINIO);
+const dominioOk=email=>DOMINIOS.some(d=>String(email||'').toLowerCase().endsWith('@'+d));
+const emailUser=u=>u.email||emailDe(u.login);
+let aguardandoUnsub=null;
 const nowISO=()=>new Date().toISOString();
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=iso=>{if(!iso)return'—';const d=new Date(iso);return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});};
@@ -112,13 +118,48 @@ function vLogin(){
   return `<main class="login"><div class="login-card">
     <div class="brand">${SEAL}<div><h1>SICAM</h1><p>Cautela de material coletivo da Furrielação – APMG</p></div></div>
     <form id="f-login" class="stack" autocomplete="on">
-      <label class="f"><span>Usuário (nº de aluno)</span><input class="i" name="login" required autocapitalize="off" autocomplete="username"></label>
+      <label class="f"><span>E-mail institucional</span><input class="i" name="login" required autocapitalize="off" autocomplete="username" inputmode="email"></label>
       <label class="f"><span>Senha</span><input class="i" name="senha" type="password" required autocomplete="current-password"></label>
       <p class="erro" id="login-erro">${esc(loginMsg)}</p>
       <button class="btn btn-pri btn-block">Entrar</button>
     </form>
-    <p class="muted small" style="margin-top:1rem">Esqueceu a senha ou ainda não tem acesso? Procure a Furrielação.</p>
+    <div class="row between" style="margin-top:1rem"><button class="link" data-act="esqueci">Esqueci minha senha</button><button class="link" data-act="irCadastro">Criar minha conta</button></div>
   </div></main>`;
+}
+function vCadastro(){
+  return `<main class="login"><div class="login-card">
+    <div class="brand">${SEAL}<div><h1>SICAM</h1><p>Criar minha conta</p></div></div>
+    <form id="f-cad" class="stack" autocomplete="off">
+      <div class="grid2"><label class="f"><span>Posto / graduação</span><input class="i" name="grad" value="Cad PM" required></label>
+      <label class="f"><span>Nome de guerra</span><input class="i" name="nome" required></label></div>
+      <div class="grid2"><label class="f"><span>Nº de aluno / RG</span><input class="i" name="num" required inputmode="numeric"></label>
+      <label class="f"><span>Pelotão</span><input class="i" name="pel" required placeholder="Ex.: 1º Pelotão Alfa"></label></div>
+      <label class="f"><span>E-mail institucional</span><input class="i" name="email" type="email" required autocapitalize="off" placeholder="nome@${esc(DOMINIOS[0])}"></label>
+      <div class="grid2"><label class="f"><span>Crie uma senha (mín. 6)</span><input class="i" name="senha" type="password" required minlength="6" autocomplete="new-password"></label>
+      <label class="f"><span>Repita a senha</span><input class="i" name="senha2" type="password" required minlength="6" autocomplete="new-password"></label></div>
+      <p class="small muted">Você vai receber um link no e-mail institucional para confirmar a conta. Depois, a Furrielação libera seu acesso.</p>
+      <p class="erro" id="cad-erro"></p>
+      <button class="btn btn-pri btn-block">Criar conta</button>
+      <button type="button" class="btn btn-block" data-act="irLogin">Já tenho conta</button>
+    </form></div></main>`;
+}
+function vVerificar(){
+  const e=auth.currentUser?auth.currentUser.email:'';
+  return `<main class="login"><div class="login-card stack">
+    <div class="brand">${SEAL}<div><h1>SICAM</h1><p>Confirme seu e-mail</p></div></div>
+    <p>Enviamos um link para <b>${esc(e)}</b>. Abra seu e-mail institucional, clique no link e volte aqui.</p>
+    <p class="aviso">Não chegou? Procure na caixa de spam ou lixo eletrônico. O remetente é noreply@${esc(SICAM_FIREBASE.authDomain||'firebaseapp.com')}.</p>
+    <p class="erro" id="ver-erro"></p>
+    <button class="btn btn-pri btn-block" data-act="jaConfirmei">Já confirmei</button>
+    <button class="btn btn-block" data-act="reenviar">Reenviar o e-mail</button>
+    <button class="btn btn-block" data-act="sair">Sair</button></div></main>`;
+}
+function vAguardando(){
+  return `<main class="login"><div class="login-card stack">
+    <div class="brand">${SEAL}<div><h1>SICAM</h1><p>Cadastro recebido</p></div></div>
+    <p>Seu e-mail foi confirmado. Agora a Furrielação precisa liberar seu acesso.</p>
+    <p class="muted small">Esta tela atualiza sozinha assim que o acesso for liberado.</p>
+    <button class="btn btn-block" data-act="sair">Sair</button></div></main>`;
 }
 
 /* ============ App do solicitante ============ */
@@ -269,11 +310,12 @@ function vAdmin(){
   const v=ui.view||'painel';
   const pend=D.reservas.filter(r=>r.status==='pendente').length;
   const late=D.reservas.filter(atrasada).length;
+  const upend=D.users.filter(u=>u.pendente).length;
   document.title=(pend?`(${pend}) `:'')+'SICAM – Furrielação';
   const views={painel:vPainel,solic:vSolic,ativas:vAtivas,material:vMaterial,militares:vMilitares,hist:vHist};
   return `<div class="shell"><nav class="side" aria-label="Menu do Furriel">
     <div class="brand">${SEAL}<div><h1>SICAM</h1><p>Furrielação APMG</p></div></div>
-    ${NAV.map(([k,l])=>`<button class="nav-b" data-act="go" data-v="${k}" ${v===k?'aria-current="page"':''}><span>${l}</span>${k==='solic'&&pend?`<span class="badge">${pend}</span>`:''}${k==='ativas'&&late?`<span class="badge red">${late}</span>`:''}</button>`).join('')}
+    ${NAV.map(([k,l])=>`<button class="nav-b" data-act="go" data-v="${k}" ${v===k?'aria-current="page"':''}><span>${l}</span>${k==='solic'&&pend?`<span class="badge">${pend}</span>`:''}${k==='ativas'&&late?`<span class="badge red">${late}</span>`:''}${k==='militares'&&upend?`<span class="badge">${upend}</span>`:''}</button>`).join('')}
     <div class="foot"><div class="who">${esc(nomeM(sess.userId))}</div>
       <button class="nav-b" data-act="senha">Trocar senha</button>
       <button class="nav-b" data-act="sair">Sair</button></div>
@@ -350,15 +392,21 @@ function vMaterial(){
         <div class="row" style="margin-top:.8rem"><button class="btn btn-sm" data-act="novaUnid" data-id="${t.id}">Adicionar unidade</button></div></div></details>`;}).join('')||'<div class="empty">Cadastre o primeiro material.</div>'}`;
 }
 function vMilitares(){
-  const l=[...D.users].sort((a,b)=>(a.perfil===b.perfil?0:a.perfil==='furriel'?-1:1)||a.nome.localeCompare(b.nome));
-  return `<div class="a-head"><div><h1>Militares</h1><p>Quem pode entrar no sistema e solicitar material.</p></div><button class="btn btn-pri" data-act="novoUser">Cadastrar militar</button></div>
-  <div class="tbl-wrap"><table><thead><tr><th>Nome</th><th>Usuário</th><th>Pelotão</th><th>Perfil</th><th>Cautelas ativas</th><th></th></tr></thead><tbody>
+  const pend=D.users.filter(u=>u.pendente);
+  const blocoPend=pend.length?`<div class="sec-h"><h2>Aguardando liberação</h2><span class="tag c-brass">${pend.length}</span></div>
+  <div class="tbl-wrap" style="margin-bottom:1.4rem"><table><thead><tr><th>Nome</th><th>Nº</th><th>Pelotão</th><th>E-mail</th><th>Pedido em</th><th></th></tr></thead><tbody>
+  ${pend.map(u=>`<tr><td>${esc(nomeM(u.id))}</td><td class="mono">${esc(u.login)}</td><td>${esc(u.pelotao)}</td><td>${esc(u.email||'')}</td><td>${fmt(u.criadoEm)}</td>
+  <td><div class="row" style="flex-wrap:nowrap"><button class="btn btn-sm btn-warn" data-act="recusarUser" data-id="${u.id}">Recusar</button><button class="btn btn-sm btn-pri" data-act="liberar" data-id="${u.id}">Liberar</button></div></td></tr>`).join('')}
+  </tbody></table></div><div class="sec-h"><h2>Com acesso</h2></div>`:'';
+  const l=[...D.users].filter(u=>!u.pendente).sort((a,b)=>(a.perfil===b.perfil?0:a.perfil==='furriel'?-1:1)||a.nome.localeCompare(b.nome));
+  return `<div class="a-head"><div><h1>Militares</h1><p>Os militares se cadastram pelo app. Aqui você libera o acesso.</p></div><button class="btn" data-act="novoUser">Cadastrar manualmente</button></div>
+  ${blocoPend}<div class="tbl-wrap"><table><thead><tr><th>Nome</th><th>E-mail / usuário</th><th>Pelotão</th><th>Perfil</th><th>Cautelas ativas</th><th></th></tr></thead><tbody>
   ${l.map(u=>{const at=D.reservas.filter(r=>r.userId===u.id&&r.status==='cautelada').length;
-    return `<tr><td>${esc(nomeM(u.id))}${u.ativo?'':' <span class="tag c-muted">desativado</span>'}</td><td class="mono">${esc(u.login)}</td><td>${esc(u.pelotao)}</td>
+    return `<tr><td>${esc(nomeM(u.id))}${u.ativo?'':' <span class="tag c-muted">desativado</span>'}</td><td class="small">${esc(u.email||u.login)}</td><td>${esc(u.pelotao)}</td>
     <td>${u.perfil==='furriel'?'Furriel':'Solicitante'}</td><td>${at||'—'}</td>
     <td>${u.id===sess.userId?'':`<button class="btn btn-sm" data-act="toggleUser" data-id="${u.id}">${u.ativo?'Desativar':'Reativar'}</button>`}</td></tr>`;}).join('')}
   </tbody></table></div>
-  <p class="small muted" style="margin-top:.8rem">Se um militar esquecer a senha: desative o usuário antigo e cadastre de novo com outro usuário (ex.: 101b). A troca de senha pelo Furriel entra numa próxima versão.</p>`;
+  <p class="small muted" style="margin-top:.8rem">Se um militar esquecer a senha, ele mesmo usa "Esqueci minha senha" na tela de entrada e recebe o link no e-mail institucional.</p>`;
 }
 function histFiltrado(){
   const q=ui.q.trim().toLowerCase();
@@ -434,7 +482,7 @@ async function comAuthSecundario(fn){
 }
 async function confirmarCautela(form,fd){
   const r=R(form.dataset.id);
-  try{await comAuthSecundario(a2=>signInWithEmailAndPassword(a2,emailDe(user(r.userId).login),fd.get('s')));}
+  try{await comAuthSecundario(a2=>signInWithEmailAndPassword(a2,emailUser(user(r.userId)),fd.get('s')));}
   catch(e){$('#caut-erro').textContent=e.code==='auth/too-many-requests'?erroFirebase(e):'Senha incorreta. Peça ao militar para digitar de novo.';return;}
   const b=writeBatch(db);
   r.unidades.forEach(id=>b.update(doc(db,'unidades',id),{status:'cautelado'}));
@@ -472,11 +520,12 @@ function novoUser(){
   openModal('Cadastrar militar',`<form id="f-user" class="stack" autocomplete="off">
     <div class="grid2"><label class="f"><span>Posto / graduação</span><input class="i" name="grad" value="Cad PM"></label>
     <label class="f"><span>Nome de guerra</span><input class="i" name="nome" required></label></div>
-    <div class="grid2"><label class="f"><span>Usuário (nº de aluno)</span><input class="i" name="login" required autocapitalize="off" pattern="[A-Za-z0-9._\\-]+" title="Só letras, números, ponto ou hífen"></label>
+    <div class="grid2"><label class="f"><span>Nº de aluno / RG</span><input class="i" name="num"></label>
     <label class="f"><span>Pelotão / setor</span><input class="i" name="pel" value="1º Pelotão"></label></div>
+    <label class="f"><span>E-mail institucional</span><input class="i" name="login" required autocapitalize="off"></label>
     <div class="grid2"><label class="f"><span>Perfil</span><select class="i" name="perfil"><option value="aluno">Solicitante</option><option value="furriel">Furriel</option></select></label>
     <label class="f"><span>Senha inicial (mín. 6)</span><input class="i" name="senha" required minlength="6"></label></div>
-    <p class="small muted">Passe o usuário e a senha inicial ao militar. Ele pode trocar a senha em Perfil.</p>
+    <p class="small muted">Prefira que o próprio militar se cadastre pelo link "Criar minha conta". Use esta tela só para exceções. No primeiro acesso ele confirma o e-mail e pode trocar a senha em Perfil.</p>
     <p class="erro" id="user-erro"></p>
     <button class="btn btn-pri btn-block">Cadastrar</button></form>`);
 }
@@ -508,6 +557,14 @@ const acts={
   recarregar:()=>location.reload(),
   sair:async()=>{closeModal();ui.view=null;ui.cart={};await signOut(auth);},
   senha:trocarSenha,
+  irCadastro:()=>{fase='cadastro';render();},
+  irLogin:()=>{fase='login';render();},
+  esqueci:()=>openModal('Esqueci minha senha',`<form id="f-esq" class="stack"><label class="f"><span>E-mail institucional</span><input class="i" name="email" type="email" required autocapitalize="off"></label>
+    <p class="erro" id="esq-erro"></p><button class="btn btn-pri btn-block">Enviar link para nova senha</button></form>`),
+  jaConfirmei:async()=>{const u=auth.currentUser;if(!u)return;await u.reload();if(auth.currentUser.emailVerified){await auth.currentUser.getIdToken(true);await aoMudarLogin(auth.currentUser);}else $('#ver-erro').textContent='Ainda não consta a confirmação. Clique no link do e-mail e tente de novo.';},
+  reenviar:async()=>{try{await sendEmailVerification(auth.currentUser);toast('E-mail reenviado.');}catch(e){toast(e.code==='auth/too-many-requests'?'Aguarde alguns minutos antes de reenviar.':erroFirebase(e),true);}},
+  liberar:async el=>{await updateDoc(doc(db,'users',el.dataset.id),{ativo:true,pendente:false,liberadoPor:sess.userId,liberadoEm:nowISO()});toast('Acesso liberado.');},
+  recusarUser:async el=>{if(!confirm('Recusar este cadastro? O militar não conseguirá entrar.'))return;await updateDoc(doc(db,'users',el.dataset.id),{ativo:false,pendente:false});toast('Cadastro recusado.');},
   avisos:async()=>{try{await Notification.requestPermission();}catch(e){}render();},
   cart:el=>{const id=el.dataset.id,c=contagem(id);ui.cart[id]=Math.max(0,Math.min(c.livre,(ui.cart[id]||0)+(+el.dataset.d)));render();},
   solicitar:abrirSolicitacao,
@@ -520,7 +577,7 @@ const acts={
     const pat=prompt('Nº de patrimônio da nova unidade',(t.prefixo||'UN')+'-'+String(n).padStart(3,'0'));if(!pat)return;
     if(D.unidades.some(u=>u.pat.toLowerCase()===pat.trim().toLowerCase())){toast('Esse patrimônio já está cadastrado.',true);return;}
     ui.aberto=t.id;await setDoc(doc(collection(db,'unidades')),{tipoId:t.id,pat:pat.trim(),status:'disponivel'});toast(`${pat.trim()} adicionado a ${t.nome}.`);},
-  toggleUser:async el=>{const u=user(el.dataset.id);await updateDoc(doc(db,'users',u.id),{ativo:!u.ativo});},
+  toggleUser:async el=>{const u=user(el.dataset.id);await updateDoc(doc(db,'users',u.id),{ativo:!u.ativo,pendente:false});},
   csv:exportarCSV
 };
 document.addEventListener('click',async e=>{
@@ -562,14 +619,37 @@ const forms={
     for(let k=1;k<=q;k++)b.set(doc(db,'unidades',tref.id+'_'+k),{tipoId:tref.id,pat:pre+'-'+String(k).padStart(3,'0'),status:'disponivel'});
     await b.commit();closeModal();toast('Material cadastrado.');},
   'f-user':async fd=>{
-    const login=normLogin(fd.get('login'));
-    if(!/^[a-z0-9._-]+$/.test(login)){$('#user-erro').textContent='Usuário só pode ter letras, números, ponto ou hífen.';return;}
-    if(D.users.some(u=>u.login===login)){$('#user-erro').textContent='Já existe um militar com esse usuário.';return;}
+    const email=emailDe(fd.get('login'));
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){$('#user-erro').textContent='Informe um e-mail válido.';return;}
+    if(D.users.some(u=>emailUser(u)===email)){$('#user-erro').textContent='Já existe um militar com esse e-mail.';return;}
     let novo;
-    try{novo=await comAuthSecundario(async a2=>(await createUserWithEmailAndPassword(a2,emailDe(login),String(fd.get('senha')))).user.uid);}
+    try{novo=await comAuthSecundario(async a2=>{const c=await createUserWithEmailAndPassword(a2,email,String(fd.get('senha')));if(!ehLegado(email)){try{await sendEmailVerification(c.user);}catch(e){}}return c.user.uid;});}
     catch(e){$('#user-erro').textContent=erroFirebase(e);return;}
-    await setDoc(doc(db,'users',novo),{login,nome:String(fd.get('nome')).trim(),grad:String(fd.get('grad')).trim(),pelotao:String(fd.get('pel')).trim(),perfil:fd.get('perfil'),ativo:true,criadoEm:nowISO()});
-    closeModal();toast(`Militar cadastrado. Usuário: ${login}`);},
+    await setDoc(doc(db,'users',novo),{login:String(fd.get('num')||'').trim()||email.split('@')[0],email,nome:String(fd.get('nome')).trim(),grad:String(fd.get('grad')).trim(),pelotao:String(fd.get('pel')).trim(),perfil:fd.get('perfil'),ativo:true,pendente:false,criadoEm:nowISO()});
+    closeModal();toast(`Militar cadastrado: ${email}`);},
+  'f-cad':async fd=>{
+    const email=String(fd.get('email')||'').trim().toLowerCase(), senha=String(fd.get('senha'));
+    if(!dominioOk(email)){$('#cad-erro').textContent=`Use seu e-mail institucional (terminado em @${DOMINIOS.join(' ou @')}).`;return;}
+    if(senha!==String(fd.get('senha2'))){$('#cad-erro').textContent='As duas senhas não são iguais.';return;}
+    bootstrapping=true;let cred;
+    try{
+      cred=await createUserWithEmailAndPassword(auth,email,senha);
+      await setDoc(doc(db,'users',cred.user.uid),{login:String(fd.get('num')).trim(),email,nome:String(fd.get('nome')).trim(),grad:String(fd.get('grad')).trim(),
+        pelotao:String(fd.get('pel')).trim(),perfil:'aluno',ativo:false,pendente:true,criadoEm:nowISO()});
+      try{await sendEmailVerification(cred.user);}catch(e){}
+      bootstrapping=false;await aoMudarLogin(auth.currentUser);
+    }catch(e){
+      bootstrapping=false;
+      if(cred&&e.code!=='auth/email-already-in-use'){try{await cred.user.delete();}catch(x){}}
+      $('#cad-erro').textContent=e.code==='auth/email-already-in-use'?'Esse e-mail já tem conta. Use "Já tenho conta" ou "Esqueci minha senha".':erroFirebase(e);
+    }
+  },
+  'f-esq':async fd=>{
+    const email=emailDe(fd.get('email'));
+    if(ehLegado(email)){$('#esq-erro').textContent='Contas antigas (sem e-mail) não recebem link. Procure a Furrielação.';return;}
+    try{await sendPasswordResetEmail(auth,email);}catch(e){if(e.code==='auth/invalid-email'){$('#esq-erro').textContent='E-mail inválido.';return;}}
+    closeModal();toast('Se esse e-mail tiver conta, chega um link para criar nova senha. Confira também o spam.');
+  },
   'f-senha':async fd=>{
     try{const u=auth.currentUser;await reauthenticateWithCredential(u,EmailAuthProvider.credential(u.email,fd.get('atual')));await updatePassword(u,String(fd.get('nova')));closeModal();toast('Senha alterada.');}
     catch(e){$('#senha-erro').textContent=(e.code==='auth/invalid-credential'||e.code==='auth/wrong-password')?'Senha atual incorreta.':erroFirebase(e);}
@@ -595,6 +675,7 @@ function escutarTudo(){
   cols.forEach(nome=>{
     const un=onSnapshot(collection(db,nome),snap=>{
       const primeira=!loaded[nome];
+      if(nome==='users'&&!primeira){const eu=me();if(eu&&eu.perfil==='furriel')snap.docChanges().forEach(ch=>{const u=ch.doc.data();if(u.pendente&&(ch.type==='added'||(ch.type==='modified'&&!(D.users.find(x=>x.id===ch.doc.id)||{}).pendente)))avisar('Novo cadastro para liberar',`${u.grad||''} ${u.nome} – ${u.pelotao||''}`);});}
       if(nome==='reservas'&&!primeira){
         const eu=me();
         snap.docChanges().forEach(ch=>{
@@ -621,12 +702,17 @@ function escutarTudo(){
 async function setupFeito(){const s=await getDoc(doc(db,'config','setup'));return s.exists();}
 async function aoMudarLogin(u){
   if(bootstrapping)return;
-  pararEscutas();closeModal();
+  pararEscutas();closeModal();if(aguardandoUnsub){aguardandoUnsub();aguardandoUnsub=null;}
   try{
-    if(!u){sess=null;D={users:[],tipos:[],unidades:[],reservas:[]};fase=(await setupFeito())?'login':'setup';document.title='SICAM';render();return;}
+    if(!u){sess=null;D={users:[],tipos:[],unidades:[],reservas:[]};const f=(await setupFeito())?'login':'setup';fase=(fase==='cadastro'&&f==='login')?'cadastro':f;document.title='SICAM';render();return;}
+    if(!ehLegado(u.email)&&!u.emailVerified){fase='verificar';render();return;}
     fase='carregando';render();
     const s=await getDoc(doc(db,'users',u.uid));
-    if(!s.exists()){loginMsg='Conta sem cadastro no sistema. Procure a Furrielação.';await signOut(auth);return;}
+    if(!s.exists()){loginMsg='Conta sem cadastro no sistema. Crie sua conta de novo ou procure a Furrielação.';await signOut(auth);return;}
+    if(s.data().pendente){fase='aguardando';render();
+      aguardandoUnsub=onSnapshot(doc(db,'users',u.uid),d=>{const x=d.data();if(x&&x.ativo){aguardandoUnsub&&aguardandoUnsub();aguardandoUnsub=null;aoMudarLogin(auth.currentUser);}
+        else if(x&&!x.pendente&&!x.ativo){loginMsg='Seu cadastro não foi liberado. Procure a Furrielação.';signOut(auth);}},()=>{});
+      return;}
     if(!s.data().ativo){loginMsg='Seu acesso foi desativado. Procure a Furrielação.';await signOut(auth);return;}
     sess={userId:u.uid};ui.view=null;escutarTudo();
   }catch(e){console.error(e);erroMsg=erroFirebase(e);fase='erro';render();}
@@ -640,6 +726,9 @@ function render(){
   else if(fase==='erro')html=vErro();
   else if(fase==='carregando')html=vCarregando();
   else if(fase==='setup')html=vSetup();
+  else if(fase==='cadastro')html=vCadastro();
+  else if(fase==='verificar')html=vVerificar();
+  else if(fase==='aguardando')html=vAguardando();
   else if(fase==='login'||!sess||!me())html=fase==='app'?vCarregando():vLogin();
   else html=me().perfil==='furriel'?vAdmin():vApp();
   $('#app').innerHTML=html;
@@ -649,7 +738,7 @@ function render(){
 render();
 if(configurado){
   try{
-    app=initializeApp(SICAM_FIREBASE);auth=getAuth(app);db=getFirestore(app);
+    app=initializeApp(SICAM_FIREBASE);auth=getAuth(app);try{auth.useDeviceLanguage();}catch(e){}db=getFirestore(app);
     onAuthStateChanged(auth,aoMudarLogin);
   }catch(e){erroMsg=erroFirebase(e);fase='erro';render();}
 }

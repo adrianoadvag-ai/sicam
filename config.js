@@ -7,3 +7,7 @@ export const SICAM_FIREBASE = {
   messagingSenderId: "409125920269",
   appId: "1:409125920269:web:58f6105011c7fff726ff44"
 };
+// Domínios de e-mail aceitos no autocadastro dos militares.
+export const SICAM_OPCOES = {
+  dominios: ["pm.pr.gov.br"]
+};
