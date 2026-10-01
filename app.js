@@ -73,6 +73,15 @@ const ui={view:null,cart:{},q:'',fs:'todos',tela:'cadete',mq:'',unidTipo:{},selT
 .cart-li:last-child{border-bottom:0}.cart-li .nm{flex:1}
 .mini{display:inline-flex;align-items:center;justify-content:center;min-width:2rem;height:2rem;border:1px solid var(--line);border-radius:6px;background:var(--surface);cursor:pointer;font-size:1rem}
 .rm{color:var(--stamp);border-color:var(--stamp)}
+.hist-ctl{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between;margin:.2rem 0 .7rem}
+.hist-mes{border:1px solid var(--line);border-radius:10px;margin-bottom:.6rem;background:var(--surface);overflow:hidden}
+.hist-mes>summary{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding:.7rem .9rem;cursor:pointer;list-style:none}
+.hist-mes>summary::-webkit-details-marker{display:none}
+.hist-mes>summary::before{content:"▸";font-size:.85rem;color:var(--muted);transition:transform .15s}
+.hist-mes[open]>summary::before{transform:rotate(90deg)}
+.hist-mes>summary .res{font-size:.82rem;color:var(--muted);margin-left:auto}
+.hist-mes .tbl-wrap{border-radius:0;border-left:0;border-right:0;border-bottom:0;margin:0}
+.hist-min{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;justify-content:space-between;border:1px dashed var(--line);border-radius:10px;padding:.9rem 1rem;background:var(--surface-2)}
 .cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.8rem;margin-top:.4rem}
 .cat-card{display:flex;flex-direction:column;align-items:flex-start;gap:.35rem;text-align:left;border:1px solid var(--line);border-radius:12px;padding:1rem;background:var(--surface);cursor:pointer;color:inherit;font:inherit}
 .cat-card:hover{border-color:var(--brass)}.cat-card h3{margin:0}.cat-card .n{font-size:.85rem;color:var(--muted)}
@@ -956,10 +965,24 @@ return `<div class="a-head"><div><h1>Histórico</h1><p>Todas as solicitações e
 <select class="i" data-chg="fs" aria-label="Filtrar situação"><option value="todos">Todas as situações</option>${Object.entries(ST).map(([k,[t]])=>`<option value="${k}" ${ui.fs===k?'selected':''}>${t}</option>`).join('')}<option value="atraso" ${ui.fs==='atraso'?'selected':''}>Em atraso</option></select></div>
 <div id="hist-t">${tabHist(histFiltrado())}</div>`;
 }
+const nomeMes=k=>{const d=new Date(k+'-01T12:00:00');if(isNaN(d))return 'Sem data';const t=d.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});return t.charAt(0).toUpperCase()+t.slice(1);};
+const mesDe=r=>String(r.retirada||r.criadoEm||'').slice(0,7)||'0000-00';
+try{ui.histMin=localStorage.getItem('sicam.histMin')==='1';}catch(e){}
+function atualizarHist(){const b=$('#hist-t');if(b)b.innerHTML=tabHist(histFiltrado());}
 function tabHist(l){
-return l.length?`<div class="tbl-wrap"><table><thead><tr><th>Nº</th><th>Militar</th><th>Material</th><th>Retirada</th><th>Devolução</th><th>Situação</th></tr></thead><tbody>
-${l.map(r=>`<tr class="hov" data-act="ver" data-id="${r.id}"><td class="mono">${nr(r.num)}</td><td>${esc(nomeM(r.userId))}</td><td>${esc(itensTxt(r))}</td><td>${fmt(r.retirada)}</td><td>${fmt(r.devolucao)}</td><td>${stamp(r)}</td></tr>`).join('')}
-</tbody></table></div>`:'<div class="empty">Nenhum registro com esse filtro.</div>';
+if(!l.length)return '<div class="empty">Nenhum registro com esse filtro.</div>';
+if(ui.histMin)return `<div class="hist-min"><span>Histórico minimizado · <b>${l.length}</b> registro(s).</span><button class="btn btn-sm btn-pri" data-act="histMax">Maximizar histórico</button></div>`;
+const grupos=new Map();l.forEach(r=>{const k=mesDe(r);if(!grupos.has(k))grupos.set(k,[]);grupos.get(k).push(r);});
+const chaves=[...grupos.keys()].sort().reverse();
+if(!ui.histAbertos)ui.histAbertos=new Set(chaves.slice(0,1));
+const filtrando=!!(ui.q&&ui.q.trim())||ui.fs!=='todos';
+const resumo=rs=>{const c={};rs.forEach(r=>{const k=atrasada(r)?'Em atraso':(ST[r.status]||[r.status])[0];c[k]=(c[k]||0)+1;});return Object.entries(c).map(([k,n])=>`${n} ${k.toLowerCase()}`).join(' · ');};
+return `<div class="hist-ctl"><span class="small muted">${l.length} registro(s) em ${chaves.length} ${chaves.length>1?'meses':'mês'}${filtrando?' · filtro ativo (todos os meses abertos)':''}</span>
+<span class="row"><button class="btn btn-sm" data-act="histExp">Expandir todos</button><button class="btn btn-sm" data-act="histRec">Recolher todos</button><button class="btn btn-sm" data-act="histMin">Minimizar histórico</button></span></div>
+${chaves.map(k=>{const rs=grupos.get(k);return `<details class="hist-mes" data-mes="${k}" ${filtrando||ui.histAbertos.has(k)?'open':''}><summary><b>${nomeMes(k)}</b><span class="tag">${rs.length}</span><span class="res">${resumo(rs)}</span></summary>
+<div class="tbl-wrap"><table><thead><tr><th>Nº</th><th>Militar</th><th>Material</th><th>Retirada</th><th>Devolução</th><th>Situação</th></tr></thead><tbody>
+${rs.map(r=>`<tr class="hov" data-act="ver" data-id="${r.id}"><td class="mono">${nr(r.num)}</td><td>${esc(nomeM(r.userId))}</td><td>${esc(itensTxt(r))}</td><td>${fmt(r.retirada)}</td><td>${fmt(r.devolucao)}</td><td>${stamp(r)}</td></tr>`).join('')}
+</tbody></table></div></details>`;}).join('')}`;
 }
 /* ============ Ações do Furriel ============ */
 const R=id=>D.reservas.find(x=>x.id===id);
@@ -1773,6 +1796,10 @@ ciente:async el=>{const r=R(el.dataset.id);if(!r)return;await updateDoc(doc(db,'
 relPDF:el=>relatorioPDF(el),
 histTudo:el=>carregarHistoricoCompleto(el),
 hist90:el=>carregarHistoricoCompleto(el,90),
+histMin:()=>{ui.histMin=true;try{localStorage.setItem('sicam.histMin','1');}catch(e){}atualizarHist();},
+histMax:()=>{ui.histMin=false;try{localStorage.setItem('sicam.histMin','0');}catch(e){}atualizarHist();},
+histExp:()=>{ui.histAbertos=new Set(histFiltrado().map(mesDe));atualizarHist();},
+histRec:()=>{ui.histAbertos=new Set();atualizarHist();},
 relXLS:el=>relatorioXLSX(el)
 };
 document.addEventListener('click',async e=>{
@@ -1781,7 +1808,7 @@ const f=acts[el.dataset.act];if(!f)return;
 e.preventDefault();
 try{await f(el);}catch(err){console.error(err);toast(erroFirebase(err),true);}
 });
-document.addEventListener('toggle',e=>{if(e.target.matches&&e.target.matches('details.tipo')&&e.target.open){ui.aberto=e.target.dataset.tipo;if(ehFurriel()&&!tipo(ui.aberto).mun&&ui.unidTipo[ui.aberto]===undefined)carregarUnidTipo(ui.aberto);}},true);
+document.addEventListener('toggle',e=>{if(e.target.matches&&e.target.matches('details.hist-mes')){const k=e.target.dataset.mes;ui.histAbertos=ui.histAbertos||new Set();if(e.target.open)ui.histAbertos.add(k);else ui.histAbertos.delete(k);return;}if(e.target.matches&&e.target.matches('details.tipo')&&e.target.open){ui.aberto=e.target.dataset.tipo;if(ehFurriel()&&!tipo(ui.aberto).mun&&ui.unidTipo[ui.aberto]===undefined)carregarUnidTipo(ui.aberto);}},true);
 document.addEventListener('change',e=>{const tu=e.target.dataset&&e.target.dataset.selu;if(tu){ui.selU[tu]=ui.selU[tu]||{};ui.selU[tu][e.target.value]=e.target.checked;const n=Object.values(ui.selU[tu]).filter(Boolean).length;const b=document.querySelector(`[data-act=excluirUnid][data-id="${tu}"]`);if(b){b.disabled=!n;b.textContent=`Excluir ${n||''} unidade(s)`;}return;}
 const id=e.target.dataset&&e.target.dataset.selt;if(id){ui.selTipos[id]=e.target.checked;const b=document.querySelector('[data-act=excluirSel]');const n=Object.values(ui.selTipos).filter(Boolean).length;if(b){b.disabled=!n;b.textContent=`Excluir ${n||''} selecionado(s)`;}}});
 const forms={
