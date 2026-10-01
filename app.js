@@ -605,7 +605,9 @@ corpo:`<div class="ficha"><p>Para <b>${esc(nomeM(d.id))}</b></p><ul class="itens
 <p class="aviso">Solicito a transferência do material acima. Ele continua sob minha responsabilidade até ${esc(nomeM(d.id))} aceitar e assinar o recebimento.</p>`,
 dados:em=>`SICAM | Pedido de transferência da cautela ${nr(r.num)} | De ${nomeM(u.id)} para ${nomeM(d.id)} | ${pats.join(', ')} | ${em}`,
 onOk:async ass=>{const rr=R(r.id);if(!rr||rr.status!=='cautelada'||rr.transferPara||rr.devAssCadete)throw {msg:'Esta cautela mudou de situação. Feche e confira.'};
-await updateDoc(doc(db,'reservas',rr.id),{transferPara:d.id,transfer:{de:u.id,para:d.id,em:ass.em,unidades:sel,mun,assinatura:ass},
+const munLinhas=[],fica=(rr.municao||[]).map(x=>({...x}));mun.forEach(m=>{const x=(rr.municao||[])[m.k];if(x){munLinhas.push({...x,qtd:m.qtd});fica[m.k].qtd-=m.qtd;}});
+const munFica=fica.filter(x=>x.qtd>0);
+await updateDoc(doc(db,'reservas',rr.id),{transferPara:d.id,transfer:{de:u.id,para:d.id,em:ass.em,unidades:sel.filter(i=>(rr.unidades||[]).includes(i)),mun,munLinhas,munFica,assinatura:ass},
 log:[...rr.log,{t:ass.em,a:'Transferência solicitada',por:u.id,obs:`Para ${nomeM(d.id)}: ${pats.join(', ')} – assinada ${FORMA[ass.metodo]||ass.metodo}`}]});
 closeModal();toast(`Pedido enviado a ${nomeM(d.id)}. Ele precisa aceitar e assinar no celular dele.`);}});
 }
@@ -638,7 +640,8 @@ if(!o||o.status!=='cautelada'||o.transferPara!==eu.id||!o.transfer)throw {msg:'O
 const tr=o.transfer,uAll=o.unidades||[],mAll=o.municao||[];
 const sel=(tr.unidades||[]).filter(i=>uAll.includes(i)),resto=uAll.filter(i=>!sel.includes(i));
 const mun=[],munResto=mAll.map(x=>({...x}));
-for(const m of munPedido(tr)){const x=mAll[m.k];if(!x)continue;const q=m.qtd&&m.qtd<x.qtd?m.qtd:x.qtd;mun.push({...x,qtd:q});munResto[m.k].qtd-=q;}
+if(Array.isArray(tr.munLinhas)){mun.push(...tr.munLinhas.map(x=>({...x})));munResto.length=0;munResto.push(...(tr.munFica||[]).map(x=>({...x})));}
+else for(const m of munPedido(tr)){const x=mAll[m.k];if(!x)continue;const q=m.qtd&&m.qtd<x.qtd?m.qtd:x.qtd;mun.push({...x,qtd:q});munResto[m.k].qtd-=q;}
 const munFica=munResto.filter(x=>x.qtd>0);
 if(!sel.length&&!mun.length)throw {msg:'Não há itens para transferir neste pedido.'};
 const ui0=o.uinfo||{},uinfo={},uinfoResto={};sel.forEach(i=>{if(ui0[i])uinfo[i]=ui0[i];});resto.forEach(i=>{if(ui0[i])uinfoResto[i]=ui0[i];});
