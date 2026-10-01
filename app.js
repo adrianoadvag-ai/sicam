@@ -12,7 +12,10 @@ let app,auth,db;
 let fase=configurado?'carregando':'naoconfig'; // naoconfig | carregando | setup | login | cadastro | verificar | aguardando | app | erro
 let erroMsg='', loginMsg='';
 const D0=()=>({users:[],tipos:[],unidades:[],reservas:[],lotes:[],catalogo:{},transfIn:[],catDoc:null,dirDoc:null});
-const JANELA_DIAS=180;
+const JANELA_DIAS=15;      // painel do Furriel: cautelas em andamento + as dos últimos 15 dias
+const JANELA_CADETE=60;   // celular do cadete: cautelas em andamento + as dos últimos 60 dias
+const ATIVAS=['pendente','aprovada','separada','cautelada'];
+let histDias=0;
 let recontando=new Set(),filaRecontar=new Set(),timerRecontar=null;
 async function recontar(ids,imediato){
 ids=[...new Set(ids)].filter(id=>id&&!(tipo(id).mun));ids.forEach(i=>filaRecontar.add(i));
@@ -372,8 +375,9 @@ if(andamento.length)h+=`<div class="sec-h"><h2>Pedidos em andamento</h2></div><d
 <p class="small muted" style="margin-top:.4rem">Retirada ${fmt(r.retirada)} · devolução ${fmt(r.devolucao)}</p></button>
 <div class="row" style="margin-top:.6rem;justify-content:flex-end"><button class="btn btn-sm" data-act="ver" data-id="${r.id}">Ver detalhes</button><button class="btn btn-sm btn-warn" data-act="cancelar" data-id="${r.id}">Cancelar pedido</button></div></div>`).join('')}</div>`;
 const fim=D.reservas.filter(r=>r.userId===u.id&&!['pendente','aprovada','separada','cautelada'].includes(r.status)).sort((a,b)=>b.num-a.num);
-if(!h&&!fim.length)return `<div class="empty"><p>Você ainda não tem cautelas.</p><p style="margin-top:.7rem"><button class="btn btn-pri" data-act="go" data-v="equip">Ver material disponível</button></p></div>`;
+if(!h&&!fim.length)return `<div class="empty"><p>Nenhuma cautela em andamento nem nos últimos ${JANELA_CADETE} dias.</p><p style="margin-top:.7rem"><button class="btn btn-pri" data-act="go" data-v="equip">Ver material disponível</button></p>${histTudo?'':'<p style="margin-top:.6rem"><button class="link" data-act="histTudo">Ver histórico completo</button></p>'}</div>`;
 if(!h)h=`<p class="small muted" style="margin:.2rem 0 .8rem">Nenhuma cautela em andamento.</p>`;
+h+=histTudo?'':`<p class="small muted" style="margin-top:.8rem">O histórico mostra os últimos ${JANELA_CADETE} dias. <button class="link" data-act="histTudo">Ver histórico completo</button></p>`;
 if(fim.length)h+=`<div class="sec-h"><h2>Histórico</h2></div><div class="rel-box"><p>Meu histórico completo de cautelas</p><div class="row"><button class="btn btn-sm" data-act="relPDF" data-escopo="meus">PDF</button><button class="btn btn-sm" data-act="relXLS" data-escopo="meus">Excel</button></div></div><div class="stack">${fim.map(cardReserva).join('')}</div>`;
 return h;
 }
@@ -947,7 +951,7 @@ return D.reservas.filter(r=>(ui.fs==='todos'||(ui.fs==='atraso'?atrasada(r):r.st
 }
 function vHist(){
 return `<div class="a-head"><div><h1>Histórico</h1><p>Todas as solicitações e cautelas registradas.</p></div><div class="row"><button class="btn" data-act="relPDF" data-escopo="hist">Relatório PDF</button><button class="btn" data-act="relXLS" data-escopo="hist">Relatório Excel</button></div></div>
-<p class="small muted" style="margin:-.6rem 0 .8rem">Os relatórios seguem a busca e o filtro abaixo – por exemplo, digite o nome de um militar para gerar só o histórico dele.${histTudo?' Histórico completo carregado.':` Aparecem as cautelas em andamento e as dos últimos ${JANELA_DIAS} dias. <button class="link" data-act="histTudo">Carregar histórico completo</button>`}</p>
+<p class="small muted" style="margin:-.6rem 0 .8rem">Os relatórios seguem a busca e o filtro abaixo – por exemplo, digite o nome de um militar para gerar só o histórico dele.${histTudo?' Histórico completo carregado.':` Aparecem as cautelas em andamento e as dos últimos ${histDias||JANELA_DIAS} dias. ${histDias<90?'<button class="link" data-act="hist90">Carregar últimos 90 dias</button> · ':''}<button class="link" data-act="histTudo">Carregar histórico completo</button>`}</p>
 <div class="filters"><input class="i" type="search" placeholder="Buscar militar, material, patrimônio, série ou lote" value="${esc(ui.q)}" data-inp="q" aria-label="Buscar">
 <select class="i" data-chg="fs" aria-label="Filtrar situação"><option value="todos">Todas as situações</option>${Object.entries(ST).map(([k,[t]])=>`<option value="${k}" ${ui.fs===k?'selected':''}>${t}</option>`).join('')}<option value="atraso" ${ui.fs==='atraso'?'selected':''}>Em atraso</option></select></div>
 <div id="hist-t">${tabHist(histFiltrado())}</div>`;
@@ -1573,7 +1577,7 @@ setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},4000);
 function escopoRel(el){
 const e=el.dataset.escopo;
 if(e==='uma'){const r=D.reservas.find(x=>x.id===el.dataset.id);return {lista:r?[r]:[],titulo:r?`Cautela ${nr(r.num)} – ${nomeM(r.userId)}`:'',arq:r?'cautela-'+String(r.num).padStart(3,'0'):'cautela'};}
-if(e==='meus'){return {lista:D.reservas.filter(r=>r.userId===sess.userId).sort((a,b)=>b.num-a.num),titulo:`Histórico de cautelas – ${nomeM(sess.userId)}`,arq:'meu-historico'};}
+if(e==='meus'){if(!histTudo)toast('O relatório inclui os últimos '+JANELA_CADETE+' dias. Para tudo, toque antes em "Ver histórico completo".');return {lista:D.reservas.filter(r=>r.userId===sess.userId).sort((a,b)=>b.num-a.num),titulo:`Histórico de cautelas – ${nomeM(sess.userId)}`,arq:'meu-historico'};}
 const filtro=[ui.q&&ui.q.trim()?`busca "${ui.q.trim()}"`:'',ui.fs!=='todos'?`situação: ${ui.fs==='atraso'?'Em atraso':(ST[ui.fs]||[ui.fs])[0]}`:''].filter(Boolean).join(', ');
 return {lista:histFiltrado(),titulo:'Histórico de cautelas'+(filtro?` (${filtro})`:''),arq:'historico'};
 }
@@ -1768,6 +1772,7 @@ csv:exportarCSV,
 ciente:async el=>{const r=R(el.dataset.id);if(!r)return;await updateDoc(doc(db,'reservas',r.id),{cienteFurriel:{por:sess.userId,em:nowISO()},log:[...r.log,entrada('Ciência do cancelamento','Furriel ciente do cancelamento')]});toast(`Ciente do cancelamento de ${nr(r.num)}.`);},
 relPDF:el=>relatorioPDF(el),
 histTudo:el=>carregarHistoricoCompleto(el),
+hist90:el=>carregarHistoricoCompleto(el,90),
 relXLS:el=>relatorioXLSX(el)
 };
 document.addEventListener('click',async e=>{
@@ -1942,12 +1947,20 @@ try{await updateDoc(doc(db,'reservas',r.id),{uinfo});}catch(e){console.warn('uin
 }
 const ordenarTipos=arr=>arr.sort((a,b)=>(a.ordem??99)-(b.ordem??99)||String(a.nome).localeCompare(String(b.nome)));
 const normRes=arr=>{arr.forEach(r=>{r.log=r.log||[];r.unidades=r.unidades||[];r.itens=r.itens||[];});return arr;};
-const baldes={resA:[],resB:[],resTudo:[]};
-function juntarReservas(){const m=new Map();[...baldes.resTudo,...baldes.resB,...baldes.resA].forEach(r=>m.set(r.id,r));return [...m.values()];}
-async function carregarHistoricoCompleto(btn){
-if(histTudo)return;if(btn){btn.disabled=true;btn.textContent='Carregando…';}
-try{const sn=await getDocs(collection(db,'reservas'));baldes.resTudo=normRes(sn.docs.map(d=>({id:d.id,...d.data()})));histTudo=true;D.reservas=juntarReservas();render();toast('Histórico completo carregado.');}
-catch(e){console.error(e);toast(erroFirebase(e),true);if(btn){btn.disabled=false;btn.textContent='Carregar histórico completo';}}
+const baldes={resA:[],resB:[],resTudo:[],cA:[],cB:[]};
+function juntarReservas(){const m=new Map();[...baldes.resTudo,...baldes.cB,...baldes.cA,...baldes.resB,...baldes.resA].forEach(r=>m.set(r.id,r));return [...m.values()];}
+async function carregarHistoricoCompleto(btn,dias){
+if(histTudo||(dias&&histDias>=dias))return;
+const txt0=btn?btn.textContent:'';if(btn){btn.disabled=true;btn.textContent='Carregando…';}
+try{
+const furr=ehFurriel();let q=collection(db,'reservas');
+if(furr&&dias)q=query(q,where('retirada','>=',new Date(Date.now()-dias*864e5).toISOString()));
+if(!furr)q=query(q,where('userId','==',sess.userId));
+const sn=await getDocs(q);baldes.resTudo=normRes(sn.docs.map(d=>({id:d.id,...d.data()})));
+if(dias&&furr)histDias=dias;else histTudo=true;
+D.reservas=juntarReservas();if(!furr)D.unidades=Object.entries(D.reservas.reduce((a,r)=>Object.assign(a,r.uinfo||{}),{})).map(([id,x])=>({id,...x}));
+render();toast(`${sn.size} cautela(s) carregada(s).`);
+}catch(e){console.error(e);toast(erroFirebase(e),true);if(btn){btn.disabled=false;btn.textContent=txt0;}}
 }
 const canceladaPeloMilitar=r=>r.status==='cancelada'&&(r.log||[]).some(l=>l.a==='Cancelada'&&l.por===r.userId);
 function faseCancel(r){const a=(r.log||[]).map(l=>l.a);
@@ -1984,14 +1997,14 @@ if(old&&old.status!==r.status&&r.status!=='cancelada'&&r.status!=='transferida')
 }
 function escutarTudo(perfil){
 const furr=perfil==='furriel',uid=sess.userId;
-histTudo=false;baldes.resA=[];baldes.resB=[];baldes.resTudo=[];dispCount={};contagemPronta=false;cacheU.clear();ui.unidTipo={};
+histTudo=false;histDias=0;baldes.resA=[];baldes.resB=[];baldes.resTudo=[];baldes.cA=[];baldes.cB=[];dispCount={};contagemPronta=false;cacheU.clear();ui.unidTipo={};
 const corte=new Date(Date.now()-JANELA_DIAS*864e5).toISOString();
 const fontes=furr?[['users',collection(db,'users')],['tipos',collection(db,'tipos')],['unidades',query(collection(db,'unidades'),where('status','in',FORA))],
 ['resA',query(collection(db,'reservas'),where('status','in',['pendente','aprovada','separada','cautelada']))],
 ['resB',query(collection(db,'reservas'),where('retirada','>=',corte))],
 ['lotes',collection(db,'lotes')],['catalogo',doc(db,'config','catalogo')],['diretorio',doc(db,'config','diretorio')]]
 :[['eu',doc(db,'users',uid)],['diretorio',doc(db,'config','diretorio')],['catalogo',doc(db,'config','catalogo')],
-['reservas',query(collection(db,'reservas'),where('userId','==',uid))],['transfIn',query(collection(db,'reservas'),where('transferPara','==',uid))]];
+['cA',query(collection(db,'reservas'),where('userId','==',uid),where('status','in',ATIVAS))],['cB',query(collection(db,'reservas'),where('userId','==',uid),where('retirada','>=',new Date(Date.now()-JANELA_CADETE*864e5).toISOString()))],['transfIn',query(collection(db,'reservas'),where('transferPara','==',uid))]];
 const cols=fontes.map(f=>f[0]);
 let euDoc=null,dirLista=null,reserva={tipos:false,users:false};
 const montarUsuarios=()=>{if(furr)return;const base=(dirLista||[]).map(x=>({...x,ativo:true,pendente:false}));const i=base.findIndex(x=>x.id===uid);
@@ -2030,7 +2043,7 @@ return;}
 const un=onSnapshot(ref,snap=>{
 const primeira=!loaded[nome];
 if(nome==='users'&&!primeira){const eu=me();if(eu&&eu.perfil==='furriel')snap.docChanges().forEach(ch=>{const u=ch.doc.data();if(u.pendente&&(ch.type==='added'||(ch.type==='modified'&&!(D.users.find(x=>x.id===ch.doc.id)||{}).pendente)))avisar(u.perfil==='furriel'?'Pedido de conta de Furriel':'Novo cadastro para liberar',`${u.grad||''} ${u.nome} – ${u.pelotao||''}`);});}
-if(!primeira&&(nome==='reservas'||nome==='resA'))avisosReservas(snap);
+if(!primeira&&(nome==='reservas'||nome==='resA'||nome==='cB'))avisosReservas(snap);
 if(!primeira&&(nome==='resA'||nome==='resB'))detectarCancelamentos(snap);
 if(!primeira&&furr&&nome==='unidades'){const ids=[];snap.docChanges().forEach(ch=>{const x=ch.doc.data();if(x&&x.tipoId)ids.push(x.tipoId);const ant=D.unidades.find(u=>u.id===ch.doc.id);if(ant)ids.push(ant.tipoId);});
 if(ids.length){recontar(ids);Object.keys(ui.unidTipo||{}).forEach(t=>{if(ids.includes(t))carregarUnidTipo(t,true);});}}
@@ -2039,13 +2052,16 @@ let arr=snap.docs.map(d=>({id:d.id,...d.data()}));
 if(nome==='tipos')ordenarTipos(arr);
 if(nome==='unidades')arr.sort((a,b)=>String(a.pat).localeCompare(String(b.pat),'pt-BR',{numeric:true}));
 if(nome==='lotes')arr.sort((a,b)=>String(a.lote).localeCompare(String(b.lote),'pt-BR',{numeric:true}));
-if(nome==='reservas'||nome==='resA'||nome==='resB')normRes(arr);
-if(nome==='resA'||nome==='resB'){baldes[nome]=arr;D.reservas=juntarReservas();}
+if(['reservas','resA','resB','cA','cB'].includes(nome))normRes(arr);
+if(['resA','resB','cA','cB'].includes(nome)){baldes[nome]=arr;D.reservas=juntarReservas();}
 else D[nome]=arr;
-if(nome==='reservas'&&!furr)D.unidades=Object.entries(arr.reduce((a,r)=>Object.assign(a,r.uinfo||{}),{})).map(([id,x])=>({id,...x}));
+if((nome==='cA'||nome==='cB')&&!furr)D.unidades=Object.entries(D.reservas.reduce((a,r)=>Object.assign(a,r.uinfo||{}),{})).map(([id,x])=>({id,...x}));
 if(nome==='users'){const eu=me();if(eu&&!eu.ativo){loginMsg='Seu acesso foi desativado. Procure a Furrielação.';signOut(auth);return;}}
 depois(primeira);
-},err=>{console.error(err);if(err.code==='permission-denied'){loginMsg='Sem permissão de acesso. Procure a Furrielação.';signOut(auth);}else toast(erroFirebase(err),true);});
+},err=>{console.error(err);
+if(nome==='cB'&&err.code==='failed-precondition'){console.warn('Índice userId+retirada ainda não criado; usando consulta simples.',err.message);
+unsubs.push(onSnapshot(query(collection(db,'reservas'),where('userId','==',uid)),snap=>{const prim=!loaded.cB;if(!prim)avisosReservas(snap);baldes.cB=normRes(snap.docs.map(d=>({id:d.id,...d.data()})));D.reservas=juntarReservas();D.unidades=Object.entries(D.reservas.reduce((a,r)=>Object.assign(a,r.uinfo||{}),{})).map(([id,x])=>({id,...x}));if(prim)pronto();else if(fase==='app'&&!modal.open)render();},()=>pronto()));return;}
+if(err.code==='permission-denied'){loginMsg='Sem permissão de acesso. Procure a Furrielação.';signOut(auth);}else toast(erroFirebase(err),true);});
 unsubs.push(un);
 });
 }
