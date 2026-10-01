@@ -73,6 +73,14 @@ const ui={view:null,cart:{},q:'',fs:'todos',tela:'cadete',mq:'',unidTipo:{},selT
 .cart-li:last-child{border-bottom:0}.cart-li .nm{flex:1}
 .mini{display:inline-flex;align-items:center;justify-content:center;min-width:2rem;height:2rem;border:1px solid var(--line);border-radius:6px;background:var(--surface);cursor:pointer;font-size:1rem}
 .rm{color:var(--stamp);border-color:var(--stamp)}
+.sit-resumo{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:.6rem}
+.sit-resumo div{border:1px solid var(--line);border-radius:10px;padding:.6rem .7rem;background:var(--surface)}
+.sit-resumo b{display:block;font-size:1.3rem}.sit-resumo span{font-size:.8rem;color:var(--muted)}
+tr.cat-row td{background:var(--surface-2);font-weight:600;font-size:.82rem;color:var(--muted)}
+.det-lista{list-style:none;padding:0;margin:.3rem 0 0}.det-lista li{display:flex;justify-content:space-between;gap:.6rem;padding:.45rem 0;border-bottom:1px solid var(--line);font-size:.9rem}
+.det-lista li:last-child{border-bottom:0}
+.plantao-sec{margin-top:.9rem}.plantao-sec h3{margin-bottom:.3rem}
+.plantao-sec li{font-size:.88rem;padding:.3rem 0;border-bottom:1px solid var(--line);list-style:none}
 .hist-ctl{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between;margin:.2rem 0 .7rem}
 .hist-mes{border:1px solid var(--line);border-radius:10px;margin-bottom:.6rem;background:var(--surface);overflow:hidden}
 .hist-mes>summary{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;padding:.7rem .9rem;cursor:pointer;list-style:none}
@@ -694,11 +702,47 @@ ${r.status==='separada'?(r.assinatura?`<p class="small c-ok" style="margin-top:.
 </button>
 <div class="row" style="margin-top:.7rem;justify-content:flex-end">${acoesAdmin(r)}</div></div>`;
 }
+try{const v=localStorage.getItem('sicam.sitMin');ui.sitMin=v===null?true:v==='1';}catch(e){ui.sitMin=true;}
+function vSitResumo(){
+const ts=D.tipos.filter(t=>!t.mun);let tot=0,disp=0,fora=0,sep=0,man=0;const zerados=[];
+ts.forEach(t=>{const k=contagem(t.id);tot+=k.total;disp+=k.disponivel;fora+=k.cautelado;sep+=k.separado;man+=k.manutencao+k.extraviado;if(k.total&&!k.livre)zerados.push(t);});
+const mun=D.tipos.filter(t=>t.mun);
+return `<div class="sit-resumo"><div><b>${ts.length}</b><span>materiais</span></div><div><b>${contagemPronta?tot:'…'}</b><span>unidades</span></div><div><b>${contagemPronta?disp:'…'}</b><span>disponíveis</span></div>
+<div><b>${fora}</b><span>cauteladas</span></div><div><b>${sep}</b><span>separadas</span></div><div><b>${man}</b><span>manutenção / extraviadas</span></div>
+${mun.length?`<div><b>${mun.reduce((a,t)=>a+contagem(t.id).disponivel,0)}</b><span>cartuchos em estoque</span></div>`:''}</div>
+${contagemPronta&&zerados.length?`<p class="small c-stamp" style="margin-top:.6rem">Sem unidade livre: ${zerados.slice(0,6).map(t=>esc(t.nome)).join(', ')}${zerados.length>6?` e mais ${zerados.length-6}`:''}.</p>`:''}
+<p class="small muted" style="margin-top:.6rem">Toque em <b>Maximizar</b> para ver material por material e abrir os detalhes (com quem está, situação de cada unidade).</p>`;
+}
+function vSitTabela(){
+const cats=catsPresentes(D.tipos);
+return `<p class="small muted" style="margin:-.3rem 0 .5rem">Toque num material para ver com quem está e a situação de cada unidade.</p><div class="tbl-wrap"><table><thead><tr><th>Material</th><th>Livre</th><th>Fora</th><th>Manut.</th><th style="width:34%">Distribuição</th></tr></thead><tbody>
+${cats.map(c=>`<tr class="cat-row"><td colspan="5">${esc(c)}</td></tr>`+ordTipos(D.tipos.filter(t=>catOf(t)===c)).map(t=>{const k=contagem(t.id),p=x=>k.total?x/k.total*100:0;
+if(k.mun)return `<tr class="hov" data-act="matDet" data-id="${t.id}"><td>${esc(t.nome)}</td><td>${k.disponivel} cart.</td><td>${k.cautelado}</td><td>—</td><td><div class="bar"><i class="g-free" style="width:${p(k.disponivel)}%"></i><i class="g-res" style="width:${p(k.separado)}%"></i><i class="g-out" style="width:${p(k.cautelado)}%"></i></div></td></tr>`;
+return `<tr class="hov" data-act="matDet" data-id="${t.id}"><td>${esc(t.nome)}</td><td>${k.livre}/${k.total}</td><td>${k.cautelado+k.separado}</td><td>${k.manutencao+k.extraviado}</td>
+<td><div class="bar"><i class="g-free" style="width:${p(k.livre)}%"></i><i class="g-res" style="width:${p(k.reservado+k.separado)}%"></i><i class="g-out" style="width:${p(k.cautelado)}%"></i><i class="g-man" style="width:${p(k.manutencao+k.extraviado)}%"></i></div></td></tr>`;}).join('')).join('')}
+</tbody></table></div>
+<div class="legend"><span><i class="g-free"></i>Disponível</span><span><i class="g-res"></i>Reservado / separado</span><span><i class="g-out"></i>Cautelado</span><span><i class="g-man"></i>Manutenção / extraviado</span></div>`;
+}
+function materialDetalhe(id){
+const t=tipo(id),k=contagem(id);if(!t.nome)return;
+let corpo=`<div class="sit-resumo"><div><b>${k.disponivel}${t.mun?'':''}</b><span>${t.mun?'cartuchos em estoque':'disponíveis'}</span></div><div><b>${k.cautelado}</b><span>${t.mun?'cartuchos cautelados':'cauteladas'}</span></div><div><b>${k.separado}</b><span>${t.mun?'cartuchos separados':'separadas'}</span></div>${t.mun?'':`<div><b>${k.manutencao}</b><span>manutenção</span></div><div><b>${k.extraviado}</b><span>extraviadas</span></div>`}</div>`;
+if(t.mun){
+corpo+=`<h3 style="margin-top:1rem">Lotes</h3><ul class="det-lista">${lotesDe(id).map(l=>`<li><span class="mono">Lote ${esc(l.lote)}</span><span>${l.qtd} cart. em estoque</span></li>`).join('')||'<li class="muted">Nenhum lote.</li>'}</ul>`;
+const rs=D.reservas.filter(r=>['separada','cautelada'].includes(r.status)&&(r.municao||[]).some(x=>x.tipoId===id));
+corpo+=`<h3 style="margin-top:1rem">Com quem está</h3><ul class="det-lista">${rs.map(r=>`<li><span><b>${esc(nomeM(r.userId))}</b> · ${esc(user(r.userId).pelotao||'')}<br><span class="small muted">${(r.municao||[]).filter(x=>x.tipoId===id).map(munTxt).join('; ')}</span></span><span class="row" style="flex-wrap:nowrap">${stamp(r)}<button class="btn btn-sm" data-act="ver" data-id="${r.id}">${nr(r.num)}</button></span></li>`).join('')||'<li class="muted">Nenhum cartucho fora da Furrielação.</li>'}</ul>`;
+}else{
+const fora=D.unidades.filter(u=>u.tipoId===id&&['separado','cautelado'].includes(u.status)).sort((a,b)=>String(a.pat).localeCompare(String(b.pat),'pt-BR',{numeric:true}));
+const man=D.unidades.filter(u=>u.tipoId===id&&['manutencao','extraviado'].includes(u.status));
+corpo+=`<h3 style="margin-top:1rem">Com quem está</h3><ul class="det-lista">${fora.map(u=>{const r=comQuem(u.id);return `<li><span><span class="mono">${esc(u.pat)}</span>${u.serie?` <span class="small muted">· série ${esc(u.serie)}</span>`:''}<br><span class="small">${r?`<b>${esc(nomeM(r.userId))}</b> · ${esc(user(r.userId).pelotao||'')} · ${u.status==='separado'?'separado, aguardando retirada':'devolver até '+fmt(r.devolucao)}`:esc(USTAT[u.status][0])}</span></span>${r?`<span class="row" style="flex-wrap:nowrap">${stamp(r)}<button class="btn btn-sm" data-act="ver" data-id="${r.id}">${nr(r.num)}</button></span>`:''}</li>`;}).join('')||'<li class="muted">Nenhuma unidade fora da Furrielação.</li>'}</ul>`;
+if(man.length)corpo+=`<h3 style="margin-top:1rem">Em manutenção ou extraviadas</h3><ul class="det-lista">${man.map(u=>`<li><span class="mono">${esc(u.pat)}${u.serie?` · série ${esc(u.serie)}`:''}</span><span class="c-stamp">${USTAT[u.status][0]}</span></li>`).join('')}</ul>`;
+}
+openModal(esc(t.nome),corpo,`<button class="btn" data-act="fechar">Fechar</button><button class="btn btn-pri" data-act="abrirTipo" data-id="${id}">Ver todas as unidades em Material</button>`,esc(catOf(t))+(t.desc?' · '+esc(t.desc):''));
+}
 function vPainel(){
 const Rs=D.reservas, c=s=>Rs.filter(r=>r.status===s).length;
 const late=Rs.filter(atrasada).length;
 const feed=Rs.flatMap(r=>(r.log||[]).map(l=>({...l,r}))).sort((a,b)=>b.t.localeCompare(a.t)).slice(0,8);
-return `<div class="a-head"><div><h1>Painel</h1><p>${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</p></div><div style="min-width:220px">${botaoAvisos()}</div></div>
+return `<div class="a-head"><div><h1>Painel</h1><p>${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</p></div><div class="row" style="align-items:center"><button class="btn btn-pri" data-act="plantao">📋 Relatório do plantão</button><div style="min-width:200px">${botaoAvisos()}</div></div></div>
 ${D.reservas.some(r=>canceladaPeloMilitar(r)&&!r.cienteFurriel)?`<div class="aviso-cautelas"><span><b>${D.reservas.filter(r=>canceladaPeloMilitar(r)&&!r.cienteFurriel).length} solicitação(ões) cancelada(s) pelo militar</b> aguardando sua ciência.</span><button class="btn btn-sm btn-pri" data-act="go" data-v="solic">Ver</button></div>`:''}<div class="kpis">
 <button class="kpi" data-act="go" data-v="solic"><strong>${c('pendente')}</strong><span>aguardando aprovação</span></button>
 <button class="kpi" data-act="go" data-v="solic"><strong>${c('aprovada')+c('separada')}</strong><span>a separar ou retirar</span></button>
@@ -706,15 +750,9 @@ ${D.reservas.some(r=>canceladaPeloMilitar(r)&&!r.cienteFurriel)?`<div class="avi
 <button class="kpi${late?' alert':''}" data-act="go" data-v="ativas"><strong>${late}</strong><span>com devolução em atraso</span></button>
 </div>
 <div class="two">
-<section><div class="sec-h"><h2>Situação do material</h2></div>
-${D.tipos.length?`<div class="tbl-wrap"><table><thead><tr><th>Material</th><th>Livre</th><th>Fora</th><th>Manut.</th><th style="width:40%">Distribuição</th></tr></thead><tbody>
-${D.tipos.map(t=>{const k=contagem(t.id),p=x=>k.total?x/k.total*100:0;
-if(k.mun)return `<tr><td>${esc(t.nome)}</td><td>${k.disponivel} cart.</td><td>${k.cautelado}</td><td>—</td><td><div class="bar"><i class="g-free" style="width:${p(k.disponivel)}%"></i><i class="g-res" style="width:${p(k.separado)}%"></i><i class="g-out" style="width:${p(k.cautelado)}%"></i></div></td></tr>`;
-return `<tr><td>${esc(t.nome)}</td><td>${k.livre}/${k.total}</td><td>${k.cautelado}</td><td>${k.manutencao+k.extraviado}</td>
-<td><div class="bar"><i class="g-free" style="width:${p(k.livre)}%"></i><i class="g-res" style="width:${p(k.reservado+k.separado)}%"></i><i class="g-out" style="width:${p(k.cautelado)}%"></i><i class="g-man" style="width:${p(k.manutencao+k.extraviado)}%"></i></div></td></tr>`;}).join('')}
-</tbody></table></div>
-<div class="legend"><span><i class="g-free"></i>Disponível</span><span><i class="g-res"></i>Reservado / separado</span><span><i class="g-out"></i>Cautelado</span><span><i class="g-man"></i>Manutenção / extraviado</span></div>`
-:`<div class="empty"><p>Nenhum material cadastrado.</p><p style="margin-top:.6rem"><button class="btn btn-pri" data-act="go" data-v="material">Cadastrar material</button></p></div>`}
+<section><div class="sec-h"><h2>Situação do material</h2>${D.tipos.length?`<button class="btn btn-sm" data-act="${ui.sitMin?'sitMax':'sitMin'}">${ui.sitMin?'Maximizar':'Minimizar'}</button>`:''}</div>
+${!D.tipos.length?`<div class="empty"><p>Nenhum material cadastrado.</p><p style="margin-top:.6rem"><button class="btn btn-pri" data-act="go" data-v="material">Cadastrar material</button></p></div>`
+:ui.sitMin?vSitResumo():vSitTabela()}
 </section>
 <section><div class="sec-h"><h2>Últimos registros</h2></div><div class="card"><ul class="feed">
 ${feed.map(l=>`<li><time>${fmt(l.t)}</time>${nr(l.r.num)} ${esc(l.a.toLowerCase())} – ${esc(nomeM(l.r.userId))}</li>`).join('')||'<li class="muted">Nenhum registro ainda.</li>'}
@@ -959,7 +997,7 @@ return D.reservas.filter(r=>(ui.fs==='todos'||(ui.fs==='atraso'?atrasada(r):r.st
 .sort((a,b)=>b.num-a.num);
 }
 function vHist(){
-return `<div class="a-head"><div><h1>Histórico</h1><p>Todas as solicitações e cautelas registradas.</p></div><div class="row"><button class="btn" data-act="relPDF" data-escopo="hist">Relatório PDF</button><button class="btn" data-act="relXLS" data-escopo="hist">Relatório Excel</button></div></div>
+return `<div class="a-head"><div><h1>Histórico</h1><p>Todas as solicitações e cautelas registradas.</p></div><div class="row"><button class="btn" data-act="plantao">📋 Relatório do plantão</button><button class="btn" data-act="relPDF" data-escopo="hist">Relatório PDF</button><button class="btn" data-act="relXLS" data-escopo="hist">Relatório Excel</button></div></div>
 <p class="small muted" style="margin:-.6rem 0 .8rem">Os relatórios seguem a busca e o filtro abaixo – por exemplo, digite o nome de um militar para gerar só o histórico dele.${histTudo?' Histórico completo carregado.':` Aparecem as cautelas em andamento e as dos últimos ${histDias||JANELA_DIAS} dias. ${histDias<90?'<button class="link" data-act="hist90">Carregar últimos 90 dias</button> · ':''}<button class="link" data-act="histTudo">Carregar histórico completo</button>`}</p>
 <div class="filters"><input class="i" type="search" placeholder="Buscar militar, material, patrimônio, série ou lote" value="${esc(ui.q)}" data-inp="q" aria-label="Buscar">
 <select class="i" data-chg="fs" aria-label="Filtrar situação"><option value="todos">Todas as situações</option>${Object.entries(ST).map(([k,[t]])=>`<option value="${k}" ${ui.fs===k?'selected':''}>${t}</option>`).join('')}<option value="atraso" ${ui.fs==='atraso'?'selected':''}>Em atraso</option></select></div>
@@ -1605,6 +1643,98 @@ const filtro=[ui.q&&ui.q.trim()?`busca "${ui.q.trim()}"`:'',ui.fs!=='todos'?`sit
 return {lista:histFiltrado(),titulo:'Histórico de cautelas'+(filtro?` (${filtro})`:''),arq:'historico'};
 }
 const carimboArq=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;};
+/* ---- Relatório do plantão: o que foi cautelado, para quem, e as pendências na passagem do serviço ---- */
+const toLocalDT=d=>{const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;};
+function abrirPlantao(){
+let ini=null;try{const f=localStorage.getItem('sicam.fimPlantao');if(f&&Date.now()-new Date(f)<48*3600e3)ini=new Date(f);}catch(e){}
+if(!ini)ini=new Date(Date.now()-24*3600e3);
+openModal('Relatório do plantão',`<form id="f-plantao" class="stack" autocomplete="off">
+<p class="small muted">Relação do que foi cautelado, devolvido e transferido no seu turno, e do que fica pendente para quem assume o serviço.</p>
+<div class="grid2"><label class="f"><span>Início do plantão</span><input class="i" type="datetime-local" name="ini" value="${toLocalDT(ini)}" required></label>
+<label class="f"><span>Fim do plantão</span><input class="i" type="datetime-local" name="fim" value="${toLocalDT(new Date())}" required></label></div>
+<label class="check"><input type="checkbox" name="meus" checked><span>Só as entregas e devoluções registradas por mim (${esc(nomeM(sess.userId))})</span></label>
+<p class="erro" id="pl-erro"></p>
+<div class="row"><button class="btn" name="acao" value="previa">Ver na tela</button><button class="btn" name="acao" value="xls">Baixar Excel</button><button class="btn btn-pri" name="acao" value="pdf">Gerar PDF</button></div>
+<div id="pl-prev"></div></form>`,'','Final do turno');
+}
+async function dadosPlantao(fd){
+const ini=new Date(fd.get('ini')),fim=new Date(new Date(fd.get('fim')).getTime()+59999),meus=!!fd.get('meus'); // inclui o minuto final inteiro
+if(!(fim>ini))throw {msg:'O fim precisa ser depois do início.'};
+const dias=Math.ceil((Date.now()-ini)/864e5)+1;
+if(dias>JANELA_DIAS&&!histTudo&&histDias<dias)await carregarHistoricoCompleto(null,Math.max(dias,30));
+const a=ini.toISOString(),b=fim.toISOString();
+const descR=r=>(r.unidades||[]).map(i=>descUnid(i,r.uinfo)).concat((r.municao||[]).map(munTxt)).join('; ')||itensTxt(r);
+const ev=[];
+D.reservas.forEach(r=>(r.log||[]).forEach(l=>{if(!l.t||l.t<a||l.t>b)return;
+const m={t:l.t,r,por:l.por,obs:l.obs||''};
+if(l.a==='Cautelada'&&(!meus||l.por===sess.userId))ev.push({...m,tipo:'Cautela entregue'});
+else if(l.a==='Devolvida'&&(!meus||l.por===sess.userId))ev.push({...m,tipo:'Devolução recebida'});
+else if(l.a==='Transferência')ev.push({...m,tipo:'Transferência entre militares'});
+else if(l.a==='Cancelada'&&l.por===r.userId)ev.push({...m,tipo:'Cancelada pelo militar'});
+else if(l.a==='Recusada'&&(!meus||l.por===sess.userId))ev.push({...m,tipo:'Solicitação recusada'});
+}));
+ev.sort((x,y)=>x.t.localeCompare(y.t));
+const ativas=D.reservas.filter(r=>r.status==='cautelada').sort((x,y)=>String(x.devolucao).localeCompare(String(y.devolucao)));
+const aguardando=D.reservas.filter(r=>['pendente','aprovada','separada'].includes(r.status)).sort((x,y)=>String(x.retirada).localeCompare(String(y.retirada)));
+const grupos=['Cautela entregue','Devolução recebida','Transferência entre militares','Cancelada pelo militar','Solicitação recusada'];
+return {ini,fim,meus,ev,ativas,aguardando,grupos,descR,atraso:ativas.filter(atrasada)};
+}
+function previaPlantao(d){
+const cont=g=>d.ev.filter(e=>e.tipo===g).length;
+const linha=e=>`<li><b>${fmt(e.t)}</b> · ${nr(e.r.num)} · <b>${esc(nomeM(e.r.userId))}</b> (${esc(user(e.r.userId).pelotao||'')})<br><span class="small">${esc(d.descR(e.r))}</span>${e.tipo==='Devolução recebida'&&e.obs?`<br><span class="small muted">${esc(e.obs)}</span>`:''}</li>`;
+return `<div class="sit-resumo" style="margin-top:.8rem">${d.grupos.map(g=>`<div><b>${cont(g)}</b><span>${g.toLowerCase()}</span></div>`).join('')}<div><b>${d.ativas.length}</b><span>cautelas ativas no fim</span></div></div>
+${d.grupos.filter(cont).map(g=>`<div class="plantao-sec"><h3>${g} (${cont(g)})</h3><ul style="padding:0">${d.ev.filter(e=>e.tipo===g).map(linha).join('')}</ul></div>`).join('')||'<p class="small muted" style="margin-top:.8rem">Nenhuma movimentação no período.</p>'}
+<div class="plantao-sec"><h3>Pendências para quem assume</h3><ul style="padding:0">
+${d.aguardando.map(r=>`<li>${nr(r.num)} · <b>${esc(nomeM(r.userId))}</b> · ${(ST[r.status]||[r.status])[0]} · retirada ${fmt(r.retirada)}<br><span class="small">${esc(itensTxt(r))}</span></li>`).join('')||'<li class="small muted">Nenhum pedido aguardando.</li>'}
+${d.atraso.map(r=>`<li class="c-stamp">${nr(r.num)} · <b>${esc(nomeM(r.userId))}</b> · EM ATRASO desde ${fmt(r.devolucao)}<br><span class="small">${esc(d.descR(r))}</span></li>`).join('')}
+</ul><p class="small muted">${d.ativas.length} cautela(s) ativa(s) no fim do plantão (a lista completa está no PDF e no Excel).</p></div>`;
+}
+async function gerarPlantao(form,acao){
+const fd=new FormData(form);const e=$('#pl-erro');e.textContent='';let d;
+try{d=await dadosPlantao(fd);}catch(x){e.textContent=x.msg||erroFirebase(x);return;}
+try{localStorage.setItem('sicam.fimPlantao',d.fim.toISOString());}catch(x){}
+const nomeArq=`sicam-plantao-${carimboArq()}`;const periodo=`${fmtC(d.ini.toISOString())} a ${fmtC(d.fim.toISOString())}`;
+if(acao==='previa'){$('#pl-prev').innerHTML=previaPlantao(d);return;}
+if(acao==='xls'){
+const lin=d.ev.map(x=>[fmtC(x.t),x.tipo,nr(x.r.num),nomeM(x.r.userId),user(x.r.userId).pelotao||'',d.descR(x.r),x.por?nomeM(x.por):'',x.obs]);
+baixarArquivo(montarXLSX([
+{nome:'Movimentações',cab:['Data e hora','Tipo','Nº','Militar','Pelotão','Material (nome, patrimônio, série, lote)','Registrado por','Observação'],larg:[17,26,8,24,16,60,22,40],linhas:lin},
+{nome:'Cautelas ativas no fim',cab:['Nº','Militar','Pelotão','Material','Retirada','Devolução prevista','Situação'],larg:[8,24,16,60,17,17,14],linhas:d.ativas.map(r=>[nr(r.num),nomeM(r.userId),user(r.userId).pelotao||'',d.descR(r),fmtC(r.retirada),fmtC(r.devolucao),atrasada(r)?'Em atraso':'Cautelado'])},
+{nome:'Pedidos aguardando',cab:['Nº','Militar','Pelotão','Material','Situação','Retirada prevista'],larg:[8,24,16,50,22,17],linhas:d.aguardando.map(r=>[nr(r.num),nomeM(r.userId),user(r.userId).pelotao||'',itensTxt(r),(ST[r.status]||[r.status])[0],fmtC(r.retirada)])},
+{nome:'Resumo',cab:['Campo','Valor'],larg:[30,60],linhas:[['Relatório','Relatório do plantão'],['Período',periodo],['Furriel',nomeM(sess.userId)],['Somente registros do Furriel',d.meus?'Sim':'Não'],...d.grupos.map(g=>[g,d.ev.filter(x=>x.tipo===g).length]),['Cautelas ativas no fim',d.ativas.length],['Em atraso no fim',d.atraso.length],['Pedidos aguardando',d.aguardando.length],['Gerado em',fmtC(nowISO())]]}]),nomeArq+'.xlsx');
+toast('Relatório do plantão (Excel) gerado.');return;}
+// PDF
+const btn=form.querySelector('button[value=pdf]');if(btn){btn.disabled=true;btn.textContent='Gerando…';}
+try{
+const P=await carregarPDFLib();const pdf=await P.PDFDocument.create();pdf.setTitle(winAnsi('SICAM – Relatório do plantão'));
+const F1=await pdf.embedFont(P.StandardFonts.Helvetica),F2=await pdf.embedFont(P.StandardFonts.HelveticaBold);
+const W=595.28,H=841.89,M=40,verde=P.rgb(0.184,0.239,0.165),cinza=P.rgb(0.36,0.4,0.36),preto=P.rgb(0.1,0.12,0.1),vermelho=P.rgb(0.6,0.15,0.12);let pg,y;
+const nova=()=>{pg=pdf.addPage([W,H]);y=H-M;};
+const quebra=(t,f,s,w)=>{const out=[];for(const par of winAnsi(t).split('\n')){let l='';for(const pal of par.split(' ')){const tt=l?l+' '+pal:pal;if(l&&f.widthOfTextAtSize(tt,s)>w){out.push(l);l=pal;}else l=tt;}out.push(l);}return out;};
+const cabe=h=>{if(y-h<M+24)nova();};
+const texto=(t,o={})=>{const f=o.f||F1,s=o.s||9,x=o.x||M,w=o.w||(W-2*M),c=o.c||preto;for(const l of quebra(t,f,s,w)){cabe(s*1.35);pg.drawText(l,{x,y:y-s,size:s,font:f,color:c});y-=s*1.35;}};
+const secao=t=>{cabe(40);y-=8;pg.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:1,color:verde});y-=5;texto(t,{f:F2,s:11});y-=2;};
+nova();pg.drawRectangle({x:0,y:H-70,width:W,height:70,color:verde});
+pg.drawText('SICAM',{x:M,y:H-36,size:20,font:F2,color:P.rgb(1,1,1)});pg.drawText(winAnsi('Relatório do plantão – Furrielação APMG'),{x:M,y:H-54,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
+y=H-88;texto(`Período: ${periodo}`,{f:F2,s:10});texto(`Furriel: ${nomeM(sess.userId)}${d.meus?' (somente registros feitos por ele)':''}`,{s:9.5});texto(`Gerado em ${fmtC(nowISO())}`,{s:8.5,c:cinza});
+y-=4;texto(d.grupos.map(g=>`${g}: ${d.ev.filter(x=>x.tipo===g).length}`).join('   ·   ')+`   ·   Cautelas ativas no fim: ${d.ativas.length}`,{s:9,c:cinza});
+for(const g of d.grupos){const l=d.ev.filter(x=>x.tipo===g);if(!l.length)continue;secao(`${g} (${l.length})`);
+for(const x of l){texto(`${fmtC(x.t)}  ·  ${nr(x.r.num)}  ·  ${nomeM(x.r.userId)}${user(x.r.userId).pelotao?' ('+user(x.r.userId).pelotao+')':''}`,{f:F2,s:9});texto(d.descR(x.r),{x:M+10,w:W-2*M-10,s:8.5});if(g==='Devolução recebida'&&x.obs)texto(x.obs,{x:M+10,w:W-2*M-10,s:8,c:cinza});y-=3;}}
+if(!d.ev.length){secao('Movimentações');texto('Nenhuma movimentação no período.',{c:cinza});}
+secao(`Pendências para quem assume o serviço`);
+if(d.atraso.length){texto(`Em atraso (${d.atraso.length}):`,{f:F2,s:9,c:vermelho});d.atraso.forEach(r=>{texto(`${nr(r.num)} · ${nomeM(r.userId)} · devolução prevista ${fmtC(r.devolucao)}`,{s:8.5,c:vermelho,x:M+10});texto(d.descR(r),{x:M+20,w:W-2*M-20,s:8});});y-=3;}
+texto(`Pedidos aguardando (${d.aguardando.length}):`,{f:F2,s:9});d.aguardando.forEach(r=>texto(`${nr(r.num)} · ${nomeM(r.userId)} · ${(ST[r.status]||[r.status])[0]} · retirada ${fmtC(r.retirada)} · ${itensTxt(r)}`,{s:8.5,x:M+10,w:W-2*M-10}));if(!d.aguardando.length)texto('Nenhum.',{s:8.5,x:M+10,c:cinza});y-=3;
+texto(`Cautelas ativas no fim do plantão (${d.ativas.length}):`,{f:F2,s:9});d.ativas.forEach(r=>texto(`${nr(r.num)} · ${nomeM(r.userId)} · devolver até ${fmtC(r.devolucao)} · ${d.descR(r)}`,{s:8,x:M+10,w:W-2*M-10}));if(!d.ativas.length)texto('Nenhuma.',{s:8.5,x:M+10,c:cinza});
+cabe(90);y-=40;const lw=(W-2*M-30)/2;
+pg.drawLine({start:{x:M,y},end:{x:M+lw,y},thickness:.7,color:preto});pg.drawLine({start:{x:M+lw+30,y},end:{x:W-M,y},thickness:.7,color:preto});
+pg.drawText(winAnsi('Furriel que passa o serviço'),{x:M,y:y-12,size:8.5,font:F1,color:cinza});pg.drawText(winAnsi(nomeM(sess.userId)),{x:M,y:y-24,size:8.5,font:F2,color:preto});
+pg.drawText(winAnsi('Furriel que assume o serviço'),{x:M+lw+30,y:y-12,size:8.5,font:F1,color:cinza});
+const pags=pdf.getPages();pags.forEach((p,i)=>p.drawText(`${winAnsi('SICAM – Relatório do plantão')} · ${i+1}/${pags.length}`,{x:M,y:18,size:7.5,font:F1,color:cinza}));
+baixarArquivo(new Blob([await pdf.save()],{type:'application/pdf'}),nomeArq+'.pdf');toast('Relatório do plantão (PDF) gerado.');
+}catch(x){console.error(x);e.textContent=x.message||'Não foi possível gerar o PDF.';}
+finally{if(btn){btn.disabled=false;btn.textContent='Gerar PDF';}}
+}
+
 /* ---- Excel (.xlsx) gerado no próprio aparelho, sem depender de serviço externo ---- */
 const crcT=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?(0xEDB88320^(c>>>1)):(c>>>1);t[n]=c>>>0;}return t;})();
 const crc32=b=>{let c=0xFFFFFFFF;for(let i=0;i<b.length;i++)c=crcT[(c^b[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;};
@@ -1788,7 +1918,7 @@ marcarUnid:el=>{const t=el.dataset.id;ui.aberto=t;ui.selU[t]={};(ui.unidTipo[t]|
 excluirUnid:el=>{const t=el.dataset.id,ids=Object.keys(ui.selU[t]||{}).filter(k=>ui.selU[t][k]);if(!ids.length)return;if(!confirm(`Excluir ${ids.length} unidade(s) de ${tipo(t).nome}? Isso não pode ser desfeito.`))return;ui.aberto=t;excluirUnidades(t,ids,el);},
 delUnid:el=>{const u=unid(el.dataset.id);if(!u)return;if(!confirm(`Excluir a unidade ${u.pat} de ${tipo(u.tipoId).nome}?`))return;ui.aberto=u.tipoId;excluirUnidades(u.tipoId,[u.id]);},
 excluirTudo:()=>abrirExcluirTudo(),
-abrirTipo:el=>{ui.mq='';ui.mqRes='';ui.aberto=el.dataset.id;ui.matCat=catOf(tipo(el.dataset.id));if(!tipo(el.dataset.id).mun)carregarUnidTipo(el.dataset.id);render();},
+abrirTipo:el=>{closeModal();ui.view='material';ui.mq='';ui.mqRes='';ui.aberto=el.dataset.id;ui.matCat=catOf(tipo(el.dataset.id));if(!tipo(el.dataset.id).mun)carregarUnidTipo(el.dataset.id);render();},
 excluirSel:el=>excluirSelecionados(el),
 toggleUser:async el=>{const u=user(el.dataset.id);await updateDoc(doc(db,'users',u.id),{ativo:!u.ativo,pendente:false});},
 csv:exportarCSV,
@@ -1796,6 +1926,10 @@ ciente:async el=>{const r=R(el.dataset.id);if(!r)return;await updateDoc(doc(db,'
 relPDF:el=>relatorioPDF(el),
 histTudo:el=>carregarHistoricoCompleto(el),
 hist90:el=>carregarHistoricoCompleto(el,90),
+sitMin:()=>{ui.sitMin=true;try{localStorage.setItem('sicam.sitMin','1');}catch(e){}render();},
+sitMax:()=>{ui.sitMin=false;try{localStorage.setItem('sicam.sitMin','0');}catch(e){}render();},
+matDet:el=>materialDetalhe(el.dataset.id),
+plantao:()=>abrirPlantao(),
 histMin:()=>{ui.histMin=true;try{localStorage.setItem('sicam.histMin','1');}catch(e){}atualizarHist();},
 histMax:()=>{ui.histMin=false;try{localStorage.setItem('sicam.histMin','0');}catch(e){}atualizarHist();},
 histExp:()=>{ui.histAbertos=new Set(histFiltrado().map(mesDe));atualizarHist();},
@@ -1919,6 +2053,7 @@ catch(e){$('#senha-erro').textContent=(e.code==='auth/invalid-credential'||e.cod
 }
 };
 document.addEventListener('submit',async e=>{
+if(e.target.id==='f-plantao'){e.preventDefault();const ac=(e.submitter&&e.submitter.value)||'previa';await gerarPlantao(e.target,ac);return;}
 const f=forms[e.target.id];if(!f)return;e.preventDefault();
 const btn=e.target.querySelector('button:not([type=button])');if(btn){if(btn.disabled)return;btn.disabled=true;}
 try{await f(new FormData(e.target),e.target);}catch(err){console.error(err);toast(erroFirebase(err),true);}
