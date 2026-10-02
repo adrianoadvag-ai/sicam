@@ -116,6 +116,28 @@ tr.cat-row td{background:var(--surface-2);font-weight:600;font-size:.82rem;color
 .bnav .dot-n{display:inline-block;min-width:1.1rem;padding:0 .3rem;border-radius:999px;background:var(--stamp);color:#fff;font-size:.7rem;line-height:1.1rem;margin-left:.2rem}
 .acesso-f{margin-top:1.3rem;text-align:center;font-size:.85rem}
 .login.restrito{background:#141a12}.login.restrito .login-card{border-top:4px solid var(--brass)}
+/* ===== Tema institucional APMG: azul-marinho, azul e dourado do brasão ===== */
+:root{--bg:#EEF2F8;--surface:#FFFFFF;--surface-2:#F3F6FA;--ink:#14202E;--muted:#55647A;--line:#D3DCE7;--olive:#003478;--olive-ink:#F4F7FB;--olive-soft:#0B4A9A;--brass:#8A6700;--gold:#F0C020;--blue:#0050B0;--ok:#2C6636;--stamp:#C0261A;--focus:#0050B0}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0B1220;--surface:#121B2B;--surface-2:#18233A;--ink:#E6ECF5;--muted:#9AA8BC;--line:#28344A;--olive:#0A2A5C;--olive-ink:#E6ECF5;--olive-soft:#123A78;--brass:#F0C020;--gold:#F0C020;--blue:#82B4F2;--ok:#7CC48A;--stamp:#F07A66;--focus:#F0C020}}
+:root[data-theme="dark"]{--bg:#0B1220;--surface:#121B2B;--surface-2:#18233A;--ink:#E6ECF5;--muted:#9AA8BC;--line:#28344A;--olive:#0A2A5C;--olive-ink:#E6ECF5;--olive-soft:#123A78;--brass:#F0C020;--gold:#F0C020;--blue:#82B4F2;--ok:#7CC48A;--stamp:#F07A66;--focus:#F0C020}
+.login.restrito{background:#071430}
+.login-card{border-top:4px solid var(--gold)}
+.login{background:linear-gradient(180deg,var(--olive) 0 38%,var(--bg) 38%)}
+.brasoes{display:flex;gap:.45rem;align-items:center;flex:none}
+.brasoes img{height:64px;width:auto;display:block}
+.side{background:linear-gradient(180deg,var(--olive),#001E46)}
+.side .seal-img{height:58px;width:auto;flex:none;display:block}
+.nav-b[aria-current="page"]{box-shadow:inset 3px 0 0 var(--gold)}
+.badge{background:var(--gold);color:#1b1608}
+.m-top{background:linear-gradient(135deg,var(--olive),var(--olive-soft));border-bottom:3px solid var(--gold)}
+.m-top-in{display:flex;gap:.85rem;align-items:center}
+.m-brasao{height:56px;width:auto;flex:none;display:block}
+.bnav button[aria-current="page"]::before{background:var(--gold)}
+.cartbar .btn{background:var(--gold);border-color:var(--gold);color:#1b1608}
+.toast{border-left-color:var(--gold)}.toast.bad{border-left-color:var(--stamp)}
+.spin{border-top-color:var(--blue)}
+.login .brand{flex-direction:column;text-align:center;gap:.7rem}.login .brasoes{gap:.9rem}.login .brasoes img{height:92px}
+@media (max-width:380px){.login .brasoes img{height:74px}.brand h1{font-size:2rem}}
 `;document.head.appendChild(st);})();
 
 /* ============ Utilidades ============ */
@@ -210,7 +232,7 @@ if(reg)reg.showNotification(titulo,{body:corpo||'',icon:'icon-192.png',badge:'ic
 }
 }catch(e){}
 }
-const SEAL=`<svg class="seal" viewBox="0 0 54 62" fill="none" aria-hidden="true"><path d="M27 2 50 10v20c0 15-10 25-23 30C14 55 4 45 4 30V10L27 2Z" stroke="currentColor" stroke-width="3"/><path d="M16 22h22M16 30h22M16 38h14" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="m32 40 4 4 7-9" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const SEAL=`<span class="brasoes"><img src="brasao-apmg.png" alt="Brasão da APMG"><img src="brasao-esfo.png" alt="Brasão da EsFO"></span>`;
 const IC={
 eq:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16v12H4zM9 7V5h6v2M4 12h16"/></svg>',
 rs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6zM9 12h7M9 16h7M9 8h3"/></svg>',
@@ -344,7 +366,7 @@ if(v==='equip'){title='Material disponível';sub='Escolha as quantidades e envie
 if(v==='reservas'){title='Minhas cautelas';sub='Pedidos, material com você, transferências e histórico.';body=vMinhasCautelas(u);}
 if(v==='perfil'){title='Meus dados';sub=esc(nomeM(u.id));body=vPerfil(u);}
 const n=Object.values(ui.cart).filter(q=>q>0).length;
-return `<header class="m-top"><div class="wrap"><p>${esc(nomeM(u.id))} · ${esc(u.pelotao)}</p><h1>${title}</h1><p>${sub}</p></div></header>
+return `<header class="m-top"><div class="wrap m-top-in"><img class="m-brasao" src="brasao-esfo.png" alt="Brasão da EsFO"><div><p>${esc(nomeM(u.id))} · ${esc(u.pelotao)}</p><h1>${title}</h1><p>${sub}</p></div></div></header>
 <main class="m-main">${body}</main>
 ${v==='equip'&&n?`<div class="cartbar"><div class="in"><span>${n} ${n>1?'itens na lista':'item na lista'}</span><button class="btn" data-act="cartLimpar">Limpar</button><button class="btn" data-act="solicitar">Revisar e solicitar</button></div></div>`:''}
 <nav class="bnav" aria-label="Navegação"><div class="in">
@@ -677,7 +699,7 @@ const upend=D.users.filter(u=>u.pendente).length;
 document.title=(pend?`(${pend}) `:'')+'SICAM – Furrielação';
 const views={painel:vPainel,solic:vSolic,ativas:vAtivas,material:vMaterial,militares:vMilitares,hist:vHist};
 return `<div class="shell"><nav class="side" aria-label="Menu do Furriel">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p>Furrielação APMG</p></div></div>
+<div class="brand"><img class="seal-img" src="brasao-apmg.png" alt="Brasão da APMG"><div><h1>SICAM</h1><p>Furrielação APMG</p></div></div>
 ${NAV.map(([k,l])=>`<button class="nav-b" data-act="go" data-v="${k}" ${v===k?'aria-current="page"':''}><span>${l}</span>${k==='solic'&&pend?`<span class="badge">${pend}</span>`:''}${k==='solic'&&ncanc?`<span class="badge red" title="Canceladas pelo militar">${ncanc}</span>`:''}${k==='ativas'&&late?`<span class="badge red">${late}</span>`:''}${k==='militares'&&upend?`<span class="badge">${upend}</span>`:''}</button>`).join('')}
 <div class="foot"><div class="who">${esc(nomeM(sess.userId))}</div>
 ${bioOk&&!temBioAqui()?'<button class="nav-b" data-act="ativarBio">Ativar digital / Face ID</button>':''}<button class="nav-b" data-act="senha">Trocar senha</button>

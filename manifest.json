@@ -1,14 +1,14 @@
 {
-  "name": "SICAM – Cautela da Furrielação APMG",
-  "short_name": "SICAM",
-  "start_url": "./",
-  "scope": "./",
-  "display": "standalone",
-  "background_color": "#E9ECE6",
-  "theme_color": "#2F3D2A",
-  "lang": "pt-BR",
-  "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
-  ]
+"name": "SICAM – Cautela da Furrielação APMG",
+"short_name": "SICAM",
+"start_url": "./",
+"scope": "./",
+"display": "standalone",
+"background_color": "#EEF2F8",
+"theme_color": "#003478",
+"lang": "pt-BR",
+"icons": [
+{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+{ "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+]
 }
