@@ -1,7 +1,7 @@
 import { initializeApp, deleteApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, initializeAuth, inMemoryPersistence, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
 signOut, reauthenticateWithCredential, EmailAuthProvider, updatePassword, sendEmailVerification, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, updateDoc, collection, onSnapshot, writeBatch, runTransaction, query, where, limit, getCountFromServer } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, writeBatch, runTransaction, query, where, limit, getCountFromServer } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import * as CFG from './config.js';
 const SICAM_FIREBASE=CFG.SICAM_FIREBASE;
 const DOMINIOS=((CFG.SICAM_OPCOES&&CFG.SICAM_OPCOES.dominios)||['pm.pr.gov.br']).map(d=>d.toLowerCase());
@@ -537,7 +537,7 @@ status:'pendente',unidades:[],cond:{},log:[entrada('Solicitada')],criadoEm:nowIS
 let n=0;
 await runTransaction(db,async tx=>{
 const cref=doc(db,'config','contador');const c=await tx.get(cref);
-n=((c.exists()&&c.data().seq)||0)+1;tx.update(cref,{seq:n});tx.set(ref,{...r,num:n});
+n=((c.exists()&&c.data().seq)||0)+1;tx.update(cref,{seq:n});tx.set(ref,{...r,num:n});tx.set(doc(db,'historico',sess.userId),{em:nowISO()});
 });
 ui.cart={};ui.view='reservas';closeModal();render();toast(`Solicitação ${nr(n)} enviada ao Furriel.`);
 }
@@ -689,6 +689,7 @@ const itensDeInfo=(ids,mm)=>{const m={};ids.forEach(i=>{const x=ui0[i];if(x)m[x.
 num=((cs.exists()&&cs.data().seq)||0)+1;
 const de=o.userId,total=!resto.length&&!munFica.length,forma=FORMA[ass.metodo]||ass.metodo;
 tx.update(doc(db,'config','contador'),{seq:num});
+tx.set(doc(db,'historico',eu.id),{em:ass.em});
 tx.set(ref,{num,userId:eu.id,itens:itensDeInfo(sel,mun),unidades:sel,municao:mun,uinfo,retirada:ass.em,devolucao:o.devolucao,finalidade:o.finalidade||'',
 obs:`Recebida de ${nomeM(de)} (${nr(o.num)})`,status:'cautelada',origem:os.id,cond:{},criadoEm:ass.em,
 transferencia:{de,em:ass.em,solicitadaEm:tr.em,assinaturaDe:tr.assinatura||null},assinatura:{...ass,contexto:'transferencia'},
@@ -1016,22 +1017,45 @@ openModal('Ajustar estoque do lote',`<form id="f-aj" data-id="${l.id}" class="st
 <label class="f"><span>Motivo (fica registrado)</span><input class="i" name="obs" required placeholder="Ex.: conferência do paiol"></label>
 <button class="btn btn-pri btn-block">Salvar ajuste</button></form>`);
 }
+/* Exclusão de cadastro: só sem histórico (conferido aqui e garantido pela regra do servidor) */
+async function marcarHistoricos(){
+try{if(localStorage.getItem('sicam.histMarcado')==='1')return;}catch(e){}
+try{const sn=await getDocs(collection(db,'reservas'));const ids=new Set();sn.docs.forEach(d=>{const x=d.data();if(x.userId)ids.add(x.userId);if(x.transferPara)ids.add(x.transferPara);});
+const l=[...ids];for(let i=0;i<l.length;i+=400){const b=writeBatch(db);l.slice(i,i+400).forEach(id=>b.set(doc(db,'historico',id),{em:nowISO()}));await b.commit();}
+try{localStorage.setItem('sicam.histMarcado','1');}catch(e){}}catch(e){console.warn('marcação de histórico',e);}
+}
+async function excluirCadastro(id,recusa){
+const u=user(id);if(!u||id===sess.userId)return;
+if(u.perfil==='furriel'&&!u.pendente){toast('Contas de Furriel ativas não podem ser excluídas. Desative a conta.',true);return;}
+let tem=false;
+try{tem=!(await getDocs(query(collection(db,'reservas'),where('userId','==',id),limit(1)))).empty||!(await getDocs(query(collection(db,'reservas'),where('transferPara','==',id),limit(1)))).empty;}
+catch(e){toast(erroFirebase(e),true);return;}
+if(tem){try{await setDoc(doc(db,'historico',id),{em:nowISO()});}catch(e){}
+toast(`${nomeM(id)} tem pedidos ou cautelas no histórico, por isso o cadastro não pode ser excluído. Use "Desativar": o acesso é cortado e o nome continua nos registros.`,true);return;}
+if(!confirm(recusa?`Recusar e excluir o pedido de cadastro de ${nomeM(id)}?`:`Excluir definitivamente o cadastro de ${nomeM(id)} (${u.email||u.login})? Ele não tem nenhum pedido nem cautela. Isso não pode ser desfeito.`))return;
+try{await deleteDoc(doc(db,'users',id));}
+catch(e){toast(e.code==='permission-denied'?'O servidor não permitiu a exclusão: o cadastro tem histórico ou é de um Furriel ativo.':erroFirebase(e),true);return;}
+toast(recusa?'Pedido de cadastro recusado e excluído.':`Cadastro de ${nomeM(id)} excluído.`);
+}
 function vMilitares(){
+marcarHistoricos();
 const pend=D.users.filter(u=>u.pendente);
 const blocoPend=pend.length?`<div class="sec-h"><h2>Aguardando liberação</h2><span class="tag c-brass">${pend.length}</span></div>
 <div class="tbl-wrap" style="margin-bottom:1.4rem"><table><thead><tr><th>Nome</th><th>Nº</th><th>Pelotão</th><th>E-mail</th><th>Pedido em</th><th></th></tr></thead><tbody>
 ${pend.map(u=>`<tr><td>${esc(nomeM(u.id))}</td><td class="mono">${esc(u.login)}</td><td>${esc(u.pelotao)}</td><td>${esc(u.email||'')}</td><td>${fmt(u.criadoEm)}</td>
 <td><div class="row" style="flex-wrap:nowrap"><button class="btn btn-sm btn-warn" data-act="recusarUser" data-id="${u.id}">Recusar</button><button class="btn btn-sm btn-pri" data-act="liberar" data-id="${u.id}">Liberar</button></div></td></tr>`).join('')}
 </tbody></table></div><div class="sec-h"><h2>Com acesso</h2></div>`:'';
-const l=[...D.users].filter(u=>!u.pendente).sort((a,b)=>(a.perfil===b.perfil?0:a.perfil==='furriel'?-1:1)||a.nome.localeCompare(b.nome));
+const inat=D.users.filter(u=>!u.pendente&&!u.ativo).length;
+const l=[...D.users].filter(u=>!u.pendente&&(u.ativo||ui.mostrarInativos)).sort((a,b)=>(a.perfil===b.perfil?0:a.perfil==='furriel'?-1:1)||a.nome.localeCompare(b.nome));
 return `<div class="a-head"><div><h1>Militares</h1><p>Os militares se cadastram pelo app. Aqui você libera o acesso.</p></div><button class="btn" data-act="novoUser">Cadastrar manualmente</button></div>
-${blocoPend}<div class="tbl-wrap"><table><thead><tr><th>Nome</th><th>E-mail / usuário</th><th>Pelotão</th><th>Perfil</th><th>Cautelas ativas</th><th></th></tr></thead><tbody>
+${blocoPend}${inat?`<label class="check small" style="margin-bottom:.6rem"><input type="checkbox" data-chk="verInativos" ${ui.mostrarInativos?'checked':''}><span>Mostrar desativados (${inat})</span></label>`:''}<div class="tbl-wrap"><table><thead><tr><th>Nome</th><th>E-mail / usuário</th><th>Pelotão</th><th>Perfil</th><th>Cautelas ativas</th><th></th></tr></thead><tbody>
 ${l.map(u=>{const at=D.reservas.filter(r=>r.userId===u.id&&r.status==='cautelada').length;
 return `<tr><td>${esc(nomeM(u.id))}${u.ativo?'':' <span class="tag c-muted">desativado</span>'}</td><td class="small">${esc(u.email||u.login)}</td><td>${esc(u.pelotao)}</td>
 <td>${u.perfil==='furriel'?'Furriel':'Solicitante'}</td><td>${at||'—'}</td>
-<td>${u.id===sess.userId?'':`<button class="btn btn-sm" data-act="toggleUser" data-id="${u.id}">${u.ativo?'Desativar':'Reativar'}</button>`}</td></tr>`;}).join('')}
+<td>${u.id===sess.userId?'':`<div class="row" style="flex-wrap:nowrap"><button class="btn btn-sm" data-act="toggleUser" data-id="${u.id}">${u.ativo?'Desativar':'Reativar'}</button>${u.perfil==='furriel'?'':`<button class="btn btn-sm btn-warn" data-act="excluirUser" data-id="${u.id}" title="Excluir cadastro (só sem histórico)">Excluir</button>`}</div>`}</td></tr>`;}).join('')}
 </tbody></table></div>
-<p class="small muted" style="margin-top:.8rem">Se um militar esquecer a senha, ele mesmo usa "Esqueci minha senha" na tela de entrada e recebe o link no e-mail institucional.</p>`;
+<p class="small muted" style="margin-top:.8rem"><b>Excluir</b> só é possível para cadastros sem nenhum pedido ou cautela (por exemplo, contas criadas por engano). Quem tem histórico deve ser <b>desativado</b>, para que o nome continue nos registros das cautelas.</p>
+<p class="small muted" style="margin-top:.5rem">Se um militar esquecer a senha, ele mesmo usa "Esqueci minha senha" na tela de entrada e recebe o link no e-mail institucional.</p>`;
 }
 function histFiltrado(){
 const q=ui.q.trim().toLowerCase();
@@ -1924,7 +1948,8 @@ esqueci:()=>openModal('Esqueci minha senha',`<form id="f-esq" class="stack"><lab
 jaConfirmei:async()=>{const u=auth.currentUser;if(!u)return;await u.reload();if(auth.currentUser.emailVerified){await auth.currentUser.getIdToken(true);await aoMudarLogin(auth.currentUser);}else $('#ver-erro').textContent='Ainda não consta a confirmação. Clique no link do e-mail e tente de novo.';},
 reenviar:async()=>{try{await sendEmailVerification(auth.currentUser);toast('E-mail reenviado.');}catch(e){toast(e.code==='auth/too-many-requests'?'Aguarde alguns minutos antes de reenviar.':erroFirebase(e),true);}},
 liberar:async el=>{await updateDoc(doc(db,'users',el.dataset.id),{ativo:true,pendente:false,liberadoPor:sess.userId,liberadoEm:nowISO()});toast('Acesso liberado.');},
-recusarUser:async el=>{if(!confirm('Recusar este cadastro? O militar não conseguirá entrar.'))return;await updateDoc(doc(db,'users',el.dataset.id),{ativo:false,pendente:false});toast('Cadastro recusado.');},
+recusarUser:el=>excluirCadastro(el.dataset.id,true),
+excluirUser:el=>excluirCadastro(el.dataset.id,false),
 avisos:async()=>{try{await Notification.requestPermission();}catch(e){}render();},
 cart:el=>{const id=el.dataset.id,lim=contagem(id).livre>0?MAXQ:(ui.cart[id]||0);ui.cart[id]=Math.max(0,Math.min(lim,(ui.cart[id]||0)+(+el.dataset.d)));render();},
 solicitar:abrirSolicitacao,
@@ -1987,7 +2012,8 @@ e.preventDefault();
 try{await f(el);}catch(err){console.error(err);toast(erroFirebase(err),true);}
 });
 document.addEventListener('toggle',e=>{if(e.target.matches&&e.target.matches('details.hist-mes')){const k=e.target.dataset.mes;ui.histAbertos=ui.histAbertos||new Set();if(e.target.open)ui.histAbertos.add(k);else ui.histAbertos.delete(k);return;}if(e.target.matches&&e.target.matches('details.tipo')&&e.target.open){ui.aberto=e.target.dataset.tipo;if(ehFurriel()&&!tipo(ui.aberto).mun&&ui.unidTipo[ui.aberto]===undefined)carregarUnidTipo(ui.aberto);}},true);
-document.addEventListener('change',e=>{const tu=e.target.dataset&&e.target.dataset.selu;if(tu){ui.selU[tu]=ui.selU[tu]||{};ui.selU[tu][e.target.value]=e.target.checked;const n=Object.values(ui.selU[tu]).filter(Boolean).length;const b=document.querySelector(`[data-act=excluirUnid][data-id="${tu}"]`);if(b){b.disabled=!n;b.textContent=`Excluir ${n||''} unidade(s)`;}return;}
+document.addEventListener('change',e=>{if(e.target.dataset&&e.target.dataset.chk==="verInativos"){ui.mostrarInativos=e.target.checked;render();return;}
+const tu=e.target.dataset&&e.target.dataset.selu;if(tu){ui.selU[tu]=ui.selU[tu]||{};ui.selU[tu][e.target.value]=e.target.checked;const n=Object.values(ui.selU[tu]).filter(Boolean).length;const b=document.querySelector(`[data-act=excluirUnid][data-id="${tu}"]`);if(b){b.disabled=!n;b.textContent=`Excluir ${n||''} unidade(s)`;}return;}
 const id=e.target.dataset&&e.target.dataset.selt;if(id){ui.selTipos[id]=e.target.checked;const b=document.querySelector('[data-act=excluirSel]');const n=Object.values(ui.selTipos).filter(Boolean).length;if(b){b.disabled=!n;b.textContent=`Excluir ${n||''} selecionado(s)`;}}});
 const forms={
 'f-login':async(fd,f)=>{loginMsg='';ui.telaLogin=f.dataset.tela||'cadete';
@@ -2082,6 +2108,13 @@ bootstrapping=false;await aoMudarLogin(auth.currentUser);
 }catch(e){
 bootstrapping=false;
 if(cred&&e.code!=='auth/email-already-in-use'){try{await cred.user.delete();}catch(x){}}
+if(e.code==='auth/email-already-in-use'){
+try{bootstrapping=true;const c2=await signInWithEmailAndPassword(auth,email,senha);
+if(!(await getDoc(doc(db,'users',c2.user.uid))).exists()){
+await setDoc(doc(db,'users',c2.user.uid),{login:String(fd.get('num')).trim(),email,nome:String(fd.get('nome')).trim(),grad:String(fd.get('grad')).trim(),pelotao:String(fd.get('pel')).trim(),perfil:'aluno',ativo:false,pendente:true,criadoEm:nowISO()});
+bootstrapping=false;await aoMudarLogin(auth.currentUser);return;}
+bootstrapping=false;await signOut(auth);}catch(x){bootstrapping=false;try{await signOut(auth);}catch(y){}}
+}
 $('#cad-erro').textContent=e.code==='auth/email-already-in-use'?'Esse e-mail já tem conta. Use "Já tenho conta" ou "Esqueci minha senha".':erroFirebase(e);
 }
 },
@@ -2280,7 +2313,7 @@ if(!u){sess=null;D=D0();const f=(await setupFeito())?'login':'setup';fase=((fase
 if(!ehLegado(u.email)&&!u.emailVerified){fase='verificar';render();return;}
 fase='carregando';render();
 const s=await getDoc(doc(db,'users',u.uid));
-if(!s.exists()){loginMsg='Conta sem cadastro no sistema. Crie sua conta de novo ou procure a Furrielação.';await signOut(auth);return;}
+if(!s.exists()){loginMsg='Não há cadastro seu no SICAM (pode ter sido excluído pela Furrielação). Toque em "Criar minha conta" e use o mesmo e-mail e senha para se cadastrar de novo.';await signOut(auth);return;}
 if(ui.telaLogin){const t=ui.telaLogin;ui.telaLogin=null;const ehF=s.data().perfil==='furriel';if(t==='furriel'?!ehF:ehF){loginMsg='E-mail ou senha incorretos.';await signOut(auth);return;}}
 if(s.data().pendente){fase='aguardando';render();
 aguardandoUnsub=onSnapshot(doc(db,'users',u.uid),d=>{const x=d.data();if(x&&x.ativo){aguardandoUnsub&&aguardandoUnsub();aguardandoUnsub=null;aoMudarLogin(auth.currentUser);}
