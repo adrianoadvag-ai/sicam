@@ -136,6 +136,13 @@ tr.cat-row td{background:var(--surface-2);font-weight:600;font-size:.82rem;color
 .cartbar .btn{background:var(--gold);border-color:var(--gold);color:#1b1608}
 .toast{border-left-color:var(--gold)}.toast.bad{border-left-color:var(--stamp)}
 .spin{border-top-color:var(--blue)}
+.tema-sel{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface)}
+.tema-sel button{background:none;border:0;padding:.4rem .8rem;font-size:.85rem;cursor:pointer;color:var(--ink);min-height:34px}
+.tema-sel button[aria-pressed="true"]{background:var(--olive);color:var(--olive-ink);font-weight:600}
+.side .tema-sel{background:transparent;border-color:rgba(255,255,255,.25);margin:.2rem .75rem .6rem}
+.side .tema-sel button{color:inherit;padding:.3rem .55rem;font-size:.78rem;min-height:30px}
+.side .tema-sel button[aria-pressed="true"]{background:rgba(255,255,255,.2);color:#fff}
+.login .tema-sel{margin-top:.9rem}
 .login .brand{flex-direction:column;text-align:center;gap:.7rem}.login .brasoes{gap:.9rem}.login .brasoes img{height:92px}
 @media (max-width:380px){.login .brasoes img{height:74px}.brand h1{font-size:2rem}}
 `;document.head.appendChild(st);})();
@@ -232,6 +239,13 @@ if(reg)reg.showNotification(titulo,{body:corpo||'',icon:'icon-192.png',badge:'ic
 }
 }catch(e){}
 }
+/* Aparência: Automático (segue o aparelho), Claro ou Escuro – guardada só neste aparelho, sem usar o Firebase */
+const TEMAS=[['auto','Automático'],['light','Claro'],['dark','Escuro']];
+let temaAtual='auto';try{temaAtual=localStorage.getItem('sicam.tema')||'auto';}catch(e){}
+function aplicarTema(t){const r=document.documentElement;if(t==='light'||t==='dark')r.setAttribute('data-theme',t);else r.removeAttribute('data-theme');
+const escuro=t==='dark'||(t!=='light'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);const m=document.querySelector('meta[name=theme-color]');if(m)m.setAttribute('content',escuro?'#0A2A5C':'#003478');}
+aplicarTema(temaAtual);
+const seletorTema=()=>`<div class="tema-sel" role="group" aria-label="Aparência do app">${TEMAS.map(([v,n])=>`<button type="button" data-act="tema" data-tema="${v}" aria-pressed="${temaAtual===v}">${n}</button>`).join('')}</div>`;
 const SEAL=`<span class="brasoes"><img src="brasao-apmg.png" alt="Brasão da APMG"><img src="brasao-esfo.png" alt="Brasão da EsFO"></span>`;
 const IC={
 eq:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16v12H4zM9 7V5h6v2M4 12h16"/></svg>',
@@ -290,6 +304,7 @@ return `<main class="login"><div class="login-card">
 </form>
 <div class="row between" style="margin-top:1rem"><button class="link" data-act="esqueci">Esqueci minha senha</button><button class="link" data-act="irCadastro">Criar minha conta</button></div>
 <p class="acesso-f"><button class="link muted" data-act="telaF">Acesso restrito da Furrielação</button></p>
+<div style="text-align:center">${seletorTema()}</div>
 </div></main>`;
 }
 function vLoginFurriel(){
@@ -482,6 +497,7 @@ return `<div class="card"><dl class="meta" style="margin:0">
 <dt>Nome</dt><dd>${esc(nomeM(u.id))}</dd><dt>Usuário</dt><dd class="mono">${esc(u.login)}</dd><dt>Pelotão</dt><dd>${esc(u.pelotao)}</dd>
 <dt>Solicitações</dt><dd>${tot.length} no total</dd></dl></div>
 <p class="small muted" style="margin-top:.8rem">${tot.some(r=>r.status==='cautelada')?'Para passar material a outro cadete ou devolvê-lo, use a aba Minhas cautelas.':'Transferência e devolução ficam na aba Minhas cautelas, depois que a Furrielação entregar o material a você.'}</p>
+<div class="card" style="margin-top:1rem"><p style="font-weight:600;margin-bottom:.5rem">Aparência</p>${seletorTema()}<p class="small muted" style="margin-top:.5rem">Automático segue o modo claro ou escuro do celular.</p></div>
 <div class="stack" style="margin-top:1rem">${botaoAvisos()}${bioOk?(bioLocal(u.id)&&(u.passkeys||[]).some(k=>k.id===bioLocal(u.id))?'<p class="small muted">Assinatura por digital/Face ID: ativada neste celular.</p>':'<button class="btn btn-block" data-act="ativarBio">Ativar assinatura por digital, Face ID ou senha do celular</button>'):''}<button class="btn btn-block" data-act="senha">Trocar minha senha</button><button class="btn btn-block" data-act="sair">Sair</button></div>`;
 }
 function fichaCarrinho(){
@@ -702,7 +718,7 @@ return `<div class="shell"><nav class="side" aria-label="Menu do Furriel">
 <div class="brand"><img class="seal-img" src="brasao-apmg.png" alt="Brasão da APMG"><div><h1>SICAM</h1><p>Furrielação APMG</p></div></div>
 ${NAV.map(([k,l])=>`<button class="nav-b" data-act="go" data-v="${k}" ${v===k?'aria-current="page"':''}><span>${l}</span>${k==='solic'&&pend?`<span class="badge">${pend}</span>`:''}${k==='solic'&&ncanc?`<span class="badge red" title="Canceladas pelo militar">${ncanc}</span>`:''}${k==='ativas'&&late?`<span class="badge red">${late}</span>`:''}${k==='militares'&&upend?`<span class="badge">${upend}</span>`:''}</button>`).join('')}
 <div class="foot"><div class="who">${esc(nomeM(sess.userId))}</div>
-${bioOk&&!temBioAqui()?'<button class="nav-b" data-act="ativarBio">Ativar digital / Face ID</button>':''}<button class="nav-b" data-act="senha">Trocar senha</button>
+${bioOk&&!temBioAqui()?'<button class="nav-b" data-act="ativarBio">Ativar digital / Face ID</button>':''}${seletorTema()}<button class="nav-b" data-act="senha">Trocar senha</button>
 <button class="nav-b" data-act="sair">Sair</button></div>
 </nav><main class="a-main">${views[v]()}</main></div>`;
 }
@@ -1955,6 +1971,7 @@ sitMin:()=>{ui.sitMin=true;try{localStorage.setItem('sicam.sitMin','1');}catch(e
 sitMax:()=>{ui.sitMin=false;try{localStorage.setItem('sicam.sitMin','0');}catch(e){}render();},
 matDet:el=>materialDetalhe(el.dataset.id),
 plantao:()=>abrirPlantao(),
+tema:el=>{temaAtual=el.dataset.tema;try{localStorage.setItem('sicam.tema',temaAtual);}catch(e){}aplicarTema(temaAtual);render();},
 histMin:()=>{ui.histMin=true;try{localStorage.setItem('sicam.histMin','1');}catch(e){}atualizarHist();},
 histMax:()=>{ui.histMin=false;try{localStorage.setItem('sicam.histMin','0');}catch(e){}atualizarHist();},
 histExp:()=>{ui.histAbertos=new Set(histFiltrado().map(mesDe));atualizarHist();},
