@@ -143,6 +143,8 @@ tr.cat-row td{background:var(--surface-2);font-weight:600;font-size:.82rem;color
 .side .tema-sel button{color:inherit;padding:.3rem .55rem;font-size:.78rem;min-height:30px}
 .side .tema-sel button[aria-pressed="true"]{background:rgba(255,255,255,.2);color:#fff}
 .login .tema-sel{margin-top:.9rem}
+.brand .nome-ext{color:var(--ink);font-weight:600;font-size:.95rem;line-height:1.3;margin:.15rem 0 .2rem;opacity:1}
+.side .brand h1{cursor:default}
 .login .brand{flex-direction:column;text-align:center;gap:.7rem}.login .brasoes{gap:.9rem}.login .brasoes img{height:92px}
 @media (max-width:380px){.login .brasoes img{height:74px}.brand h1{font-size:2rem}}
 `;document.head.appendChild(st);})();
@@ -270,18 +272,18 @@ modal.addEventListener('click',e=>{if(e.target===modal)closeModal();});
 /* ============ Telas de entrada ============ */
 function vNaoConfig(){
 return `<main class="login"><div class="login-card stack">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p>Falta ligar o app ao Firebase</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Falta ligar o app ao Firebase</p></div></div>
 <p>Abra o arquivo <b>config.js</b> e cole ali os dados do seu projeto Firebase, como está no guia de instalação.</p></div></main>`;
 }
 function vErro(){
 return `<main class="login"><div class="login-card stack">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p>Não foi possível conectar</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Não foi possível conectar</p></div></div>
 <p class="erro">${esc(erroMsg)}</p><button class="btn btn-pri btn-block" data-act="recarregar">Tentar de novo</button></div></main>`;
 }
 function vCarregando(){return `<div class="loading"><div><div class="spin"></div>Carregando…</div></div>`;}
 function vSetup(){
 return `<main class="login"><div class="login-card">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p>Configuração inicial – crie a conta do Furriel</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Configuração inicial – crie a conta do Furriel</p></div></div>
 <form id="f-setup" class="stack" autocomplete="off">
 <p class="aviso">Esta tela só aparece uma vez. A primeira conta criada aqui será a do Furriel, que depois cadastra os demais militares.</p>
 <div class="grid2"><label class="f"><span>Posto / graduação</span><input class="i" name="grad" value="Cad PM"></label>
@@ -295,7 +297,7 @@ return `<main class="login"><div class="login-card">
 }
 function vLogin(){
 return `<main class="login"><div class="login-card">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p>Cautela de material coletivo da Furrielação – APMG</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Furrielação · APMG</p></div></div>
 <form id="f-login" class="stack" autocomplete="on">
 <label class="f"><span>E-mail institucional</span><input class="i" name="login" required autocapitalize="off" autocomplete="username" inputmode="email"></label>
 <label class="f"><span>Senha</span><input class="i" name="senha" type="password" required autocomplete="current-password"></label>
@@ -309,7 +311,7 @@ return `<main class="login"><div class="login-card">
 }
 function vLoginFurriel(){
 return `<main class="login restrito"><div class="login-card">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p>Painel da Furrielação</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Painel da Furrielação</p></div></div>
 <p style="margin:-.4rem 0 1rem"><span class="stamp c-stamp">Acesso restrito</span></p>
 <form id="f-login" class="stack" autocomplete="on" data-tela="furriel">
 <label class="f"><span>E-mail</span><input class="i" name="login" required autocapitalize="off" autocomplete="username" inputmode="email"></label>
@@ -323,7 +325,7 @@ return `<main class="login restrito"><div class="login-card">
 }
 function vCadastroF(){
 return `<main class="login restrito"><div class="login-card">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p>Solicitar conta de Furriel</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Solicitar conta de Furriel</p></div></div>
 <form id="f-cadf" class="stack" autocomplete="off">
 <p class="aviso">A conta de Furriel só funciona depois de confirmar o e-mail e de ser aprovada por um Furriel já ativo.</p>
 <div class="grid2"><label class="f"><span>Posto / graduação</span><input class="i" name="grad" value="Cad PM" required></label>
@@ -338,7 +340,7 @@ return `<main class="login restrito"><div class="login-card">
 }
 function vCadastro(){
 return `<main class="login"><div class="login-card">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p>Criar minha conta</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Criar minha conta</p></div></div>
 <form id="f-cad" class="stack" autocomplete="off">
 <div class="grid2"><label class="f"><span>Posto / graduação</span><input class="i" name="grad" value="Cad PM" required></label>
 <label class="f"><span>Nome de guerra</span><input class="i" name="nome" required></label></div>
@@ -356,7 +358,7 @@ return `<main class="login"><div class="login-card">
 function vVerificar(){
 const e=auth.currentUser?auth.currentUser.email:'';
 return `<main class="login"><div class="login-card stack">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p>Confirme seu e-mail</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Confirme seu e-mail</p></div></div>
 <p>Enviamos um link para <b>${esc(e)}</b>. Abra seu e-mail institucional, clique no link e volte aqui.</p>
 <p class="aviso">Não chegou? Procure na caixa de spam ou lixo eletrônico. O remetente é noreply@${esc(SICAM_FIREBASE.authDomain||'firebaseapp.com')}.</p>
 <p class="erro" id="ver-erro"></p>
@@ -366,7 +368,7 @@ return `<main class="login"><div class="login-card stack">
 }
 function vAguardando(){
 return `<main class="login"><div class="login-card stack">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p>Cadastro recebido</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Cadastro recebido</p></div></div>
 <p>Seu e-mail foi confirmado. Agora a Furrielação precisa liberar seu acesso.</p>
 <p class="muted small">Esta tela atualiza sozinha assim que o acesso for liberado.</p>
 <button class="btn btn-block" data-act="sair">Sair</button></div></main>`;
@@ -712,7 +714,7 @@ const v=ui.view||'painel';
 const pend=D.reservas.filter(r=>r.status==='pendente').length,ncanc=D.reservas.filter(r=>canceladaPeloMilitar(r)&&!r.cienteFurriel).length;
 const late=D.reservas.filter(atrasada).length;
 const upend=D.users.filter(u=>u.pendente).length;
-document.title=(pend?`(${pend}) `:'')+'SICAM – Furrielação';
+document.title=(pend?`(${pend}) `:'')+'SICAM – Sistema Integrado de Cautela de Armamento e Munição';
 const views={painel:vPainel,solic:vSolic,ativas:vAtivas,material:vMaterial,militares:vMilitares,hist:vHist};
 return `<div class="shell"><nav class="side" aria-label="Menu do Furriel">
 <div class="brand"><img class="seal-img" src="brasao-apmg.png" alt="Brasão da APMG"><div><h1>SICAM</h1><p>Furrielação APMG</p></div></div>
@@ -1749,15 +1751,15 @@ const btn=form.querySelector('button[value=pdf]');if(btn){btn.disabled=true;btn.
 try{
 const P=await carregarPDFLib();const pdf=await P.PDFDocument.create();pdf.setTitle(winAnsi('SICAM – Relatório do plantão'));
 const F1=await pdf.embedFont(P.StandardFonts.Helvetica),F2=await pdf.embedFont(P.StandardFonts.HelveticaBold);
-const W=595.28,H=841.89,M=40,verde=P.rgb(0.184,0.239,0.165),cinza=P.rgb(0.36,0.4,0.36),preto=P.rgb(0.1,0.12,0.1),vermelho=P.rgb(0.6,0.15,0.12);let pg,y;
+const W=595.28,H=841.89,M=40,verde=P.rgb(0,0.204,0.471),cinza=P.rgb(0.36,0.4,0.36),preto=P.rgb(0.1,0.12,0.1),vermelho=P.rgb(0.6,0.15,0.12);let pg,y;
 const nova=()=>{pg=pdf.addPage([W,H]);y=H-M;};
 const quebra=(t,f,s,w)=>{const out=[];for(const par of winAnsi(t).split('\n')){let l='';for(const pal of par.split(' ')){const tt=l?l+' '+pal:pal;if(l&&f.widthOfTextAtSize(tt,s)>w){out.push(l);l=pal;}else l=tt;}out.push(l);}return out;};
 const cabe=h=>{if(y-h<M+24)nova();};
 const texto=(t,o={})=>{const f=o.f||F1,s=o.s||9,x=o.x||M,w=o.w||(W-2*M),c=o.c||preto;for(const l of quebra(t,f,s,w)){cabe(s*1.35);pg.drawText(l,{x,y:y-s,size:s,font:f,color:c});y-=s*1.35;}};
 const secao=t=>{cabe(40);y-=8;pg.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:1,color:verde});y-=5;texto(t,{f:F2,s:11});y-=2;};
 nova();pg.drawRectangle({x:0,y:H-70,width:W,height:70,color:verde});
-pg.drawText('SICAM',{x:M,y:H-36,size:20,font:F2,color:P.rgb(1,1,1)});pg.drawText(winAnsi('Relatório do plantão – Furrielação APMG'),{x:M,y:H-54,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
-y=H-88;texto(`Período: ${periodo}`,{f:F2,s:10});texto(`Furriel: ${nomeM(sess.userId)}${d.meus?' (somente registros feitos por ele)':''}`,{s:9.5});texto(`Gerado em ${fmtC(nowISO())}`,{s:8.5,c:cinza});
+pg.drawText('SICAM',{x:M,y:H-36,size:20,font:F2,color:P.rgb(1,1,1)});pg.drawText(winAnsi('Sistema Integrado de Cautela de Armamento e Munição – Furrielação APMG'),{x:M,y:H-54,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
+y=H-88;texto('Relatório do plantão',{f:F2,s:14});y-=2;texto(`Período: ${periodo}`,{f:F2,s:10});texto(`Furriel: ${nomeM(sess.userId)}${d.meus?' (somente registros feitos por ele)':''}`,{s:9.5});texto(`Gerado em ${fmtC(nowISO())}`,{s:8.5,c:cinza});
 y-=4;texto(d.grupos.map(g=>`${g}: ${d.ev.filter(x=>x.tipo===g).length}`).join('   ·   ')+`   ·   Cautelas ativas no fim: ${d.ativas.length}`,{s:9,c:cinza});
 for(const g of d.grupos){const l=d.ev.filter(x=>x.tipo===g);if(!l.length)continue;secao(`${g} (${l.length})`);
 for(const x of l){texto(`${fmtC(x.t)}  ·  ${nr(x.r.num)}  ·  ${nomeM(x.r.userId)}${user(x.r.userId).pelotao?' ('+user(x.r.userId).pelotao+')':''}`,{f:F2,s:9});texto(d.descR(x.r),{x:M+10,w:W-2*M-10,s:8.5});if(g==='Devolução recebida'&&x.obs)texto(x.obs,{x:M+10,w:W-2*M-10,s:8,c:cinza});y-=3;}}
@@ -1821,7 +1823,7 @@ const pl=[
 linhas:dados.flatMap(d=>d.itensLista.map(i=>[d.num,d.militar,i.material,i.pat,i.serie,i.lote,i.qtd,i.sit]))},
 {nome:'Andamento',cab:['Nº','Militar da cautela','Data e hora','Evento','Registrado por','Detalhes'],larg:[8,22,17,24,22,60],
 linhas:dados.flatMap(d=>d.andamento.map(a=>[d.num,d.militar,a.t,a.a,a.por,a.obs]))},
-{nome:'Sobre o relatório',cab:['Campo','Valor'],larg:[24,70],linhas:[['Relatório',titulo],['Gerado em',fmtC(nowISO())],['Gerado por',nomeM(sess.userId)],['Cautelas incluídas',dados.length],['Sistema','SICAM – Furrielação APMG']]}];
+{nome:'Sobre o relatório',cab:['Campo','Valor'],larg:[24,70],linhas:[['Relatório',titulo],['Gerado em',fmtC(nowISO())],['Gerado por',nomeM(sess.userId)],['Cautelas incluídas',dados.length],['Sistema','SICAM – Sistema Integrado de Cautela de Armamento e Munição – Furrielação APMG']]}];
 baixarArquivo(montarXLSX(pl),`sicam-${arq}-${carimboArq()}.xlsx`);toast('Relatório Excel gerado.');
 }
 /* ---- PDF ---- */
@@ -1838,9 +1840,9 @@ const {lista,titulo,arq}=escopoRel(el);if(!lista.length){toast('Não há cautela
 const btn=el;const txt0=btn.textContent;btn.disabled=true;btn.textContent='Gerando…';
 try{
 const P=await carregarPDFLib();const pdf=await P.PDFDocument.create();
-pdf.setTitle(winAnsi('SICAM – '+titulo));pdf.setAuthor(winAnsi(nomeM(sess.userId)));pdf.setCreator('SICAM – Furrielação APMG');
+pdf.setTitle(winAnsi('SICAM – '+titulo));pdf.setAuthor(winAnsi(nomeM(sess.userId)));pdf.setCreator('SICAM – Sistema Integrado de Cautela de Armamento e Munição – Furrielação APMG');
 const F1=await pdf.embedFont(P.StandardFonts.Helvetica),F2=await pdf.embedFont(P.StandardFonts.HelveticaBold);
-const W=595.28,H=841.89,M=40,verde=P.rgb(0.184,0.239,0.165),cinza=P.rgb(0.36,0.4,0.36),preto=P.rgb(0.1,0.12,0.1),linha=P.rgb(0.8,0.83,0.79);
+const W=595.28,H=841.89,M=40,verde=P.rgb(0,0.204,0.471),cinza=P.rgb(0.36,0.4,0.36),preto=P.rgb(0.1,0.12,0.1),linha=P.rgb(0.8,0.83,0.79);
 let pg,y;
 const nova=()=>{pg=pdf.addPage([W,H]);y=H-M;};
 const quebra=(t,f,s,w)=>{const out=[];for(const par of winAnsi(t).split('\n')){let l='';for(const pal of par.split(' ')){const tt=l?l+' '+pal:pal;if(l&&f.widthOfTextAtSize(tt,s)>w){out.push(l);l=pal;}else l=tt;}out.push(l);}return out;};
@@ -1850,7 +1852,7 @@ const kv=(k,v)=>{if(!v)return;const kw=150,ls=quebra(v,F1,9,W-2*M-kw);cabe(12*ls
 nova();
 pg.drawRectangle({x:0,y:H-78,width:W,height:78,color:verde});
 pg.drawText('SICAM',{x:M,y:H-40,size:22,font:F2,color:P.rgb(1,1,1)});
-pg.drawText(winAnsi('Cautela de material da Furrielação – APMG'),{x:M,y:H-58,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
+pg.drawText(winAnsi('Sistema Integrado de Cautela de Armamento e Munição – Furrielação APMG'),{x:M,y:H-58,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
 y=H-96;
 texto(titulo,{f:F2,s:14});y-=2;
 texto(`Gerado em ${fmtC(nowISO())} por ${nomeM(sess.userId)} · ${lista.length} cautela(s)`,{s:9,c:cinza});y-=8;
@@ -2274,7 +2276,7 @@ async function aoMudarLogin(u){
 if(bootstrapping)return;
 pararEscutas();closeModal();if(aguardandoUnsub){aguardandoUnsub();aguardandoUnsub=null;}
 try{
-if(!u){sess=null;D=D0();const f=(await setupFeito())?'login':'setup';fase=((fase==='cadastro'||fase==='cadastroF')&&f==='login')?fase:f;document.title='SICAM';render();return;}
+if(!u){sess=null;D=D0();const f=(await setupFeito())?'login':'setup';fase=((fase==='cadastro'||fase==='cadastroF')&&f==='login')?fase:f;document.title='SICAM – Sistema Integrado de Cautela de Armamento e Munição';render();return;}
 if(!ehLegado(u.email)&&!u.emailVerified){fase='verificar';render();return;}
 fase='carregando';render();
 const s=await getDoc(doc(db,'users',u.uid));
