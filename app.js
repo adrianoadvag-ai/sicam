@@ -136,6 +136,12 @@ tr.cat-row td{background:var(--surface-2);font-weight:600;font-size:.82rem;color
 .cartbar .btn{background:var(--gold);border-color:var(--gold);color:#1b1608}
 .toast{border-left-color:var(--gold)}.toast.bad{border-left-color:var(--stamp)}
 .spin{border-top-color:var(--blue)}
+.cat-ico{display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:14px;background:var(--olive);color:var(--gold);margin-bottom:.35rem}
+.cat-ico .ico-cat{width:34px;height:34px}
+.cat-card:hover .cat-ico{background:var(--olive-soft)}
+.cat-tit{display:inline-flex;align-items:center;gap:.5rem}
+.ico-h{width:26px;height:26px;color:var(--blue);flex:none}
+.ico-chip{width:17px;height:17px;vertical-align:-3px;margin-right:.35rem}
 .tema-sel{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface)}
 .tema-sel button{background:none;border:0;padding:.4rem .8rem;font-size:.85rem;cursor:pointer;color:var(--ink);min-height:34px}
 .tema-sel button[aria-pressed="true"]{background:var(--olive);color:var(--olive-ink);font-weight:600}
@@ -459,13 +465,13 @@ return `<div class="card eq${ok?'':' off'}">
 </div>
 </div>`;};
 h+=`<div class="filterbar"><input class="i" type="search" placeholder="Buscar material (ex.: pistola, HT, algema)" value="${esc(ui.busca||'')}" data-inp="busca" aria-label="Buscar material">
-<div class="chips" role="group" aria-label="Categorias">${['Todos',...cats].map(c=>`<button class="chip" data-act="cat" data-c="${esc(c)}" aria-pressed="${(ui.cat||'Todos')===c}">${esc(c)}</button>`).join('')}</div></div>`;
+<div class="chips" role="group" aria-label="Categorias">${['Todos',...cats].map(c=>`<button class="chip" data-act="cat" data-c="${esc(c)}" aria-pressed="${(ui.cat||'Todos')===c}">${c==='Todos'?'':iconeCat(c,'ico-chip')}${esc(c)}</button>`).join('')}</div></div>`;
 let algum=false;
 for(const c of cats){
 if(ui.cat&&ui.cat!=='Todos'&&ui.cat!==c)continue;
 const l=ordTipos(vis.filter(t=>catOf(t)===c&&(!q||normTxt(t.nome+' '+(t.desc||'')).includes(q))));
 if(!l.length)continue;algum=true;
-h+=`<h2 class="cat-h">${esc(c)}<span class="muted small">${l.length} ${l.length>1?'tipos':'tipo'}</span></h2><div class="stack">${l.map(cardT).join('')}</div>`;
+h+=`<h2 class="cat-h"><span class="cat-tit">${iconeCat(c,"ico-h")}${esc(c)}</span><span class="muted small">${l.length} ${l.length>1?'tipos':'tipo'}</span></h2><div class="stack">${l.map(cardT).join('')}</div>`;
 }
 if(!algum)h+=`<div class="empty">Nenhum material encontrado${q?` para "${esc(ui.busca)}"`:''}.</div>`;
 h+=`<p class="aviso-seg"><span aria-hidden="true">🔒</span><span>Por segurança, o app não informa as quantidades da Furrielação. Se o pedido não puder ser atendido por completo, o Furriel separa o que houver e você vê o resultado na solicitação.</span></p>`;
@@ -824,6 +830,19 @@ ${l.map(r=>`<tr class="hov" data-act="ver" data-id="${r.id}"><td class="mono">${
 <td>${r.devAssCadete?'<span class="small c-ok">Militar assinou a devolução</span><br>':''}<button class="btn btn-sm btn-pri" data-act="devolver" data-id="${r.id}">${r.devAssCadete?'Conferir e assinar':'Registrar devolução'}</button></td></tr>`).join('')}</tbody></table></div>`
 :'<div class="empty">Todo o material está na Furrielação.</div>'}`;
 }
+/* Ícones das categorias: desenhos simples em traço (sem imagens externas, sem uso do Firebase) */
+const ICO_CAT={
+'Armas de fogo':'<path d="M3 8h15l2 2v2H11l-1.2 2.4V18a1 1 0 0 1-1 1H6.4a1 1 0 0 1-1-1.2L6.6 12H4a1 1 0 0 1-1-1z"/><path d="M10.6 12v1.4a1.6 1.6 0 0 0 3.2 0V12"/><path d="M18 8V6.5"/>',
+'Munição':'<path d="M5 21v-8.5l1-1V9.5c0-2.4 1-4.4 2.5-6 1.5 1.6 2.5 3.6 2.5 6v2l1 1V21z"/><path d="M13 21v-8.5l1-1V9.5c0-2.4 1-4.4 2.5-6 1.5 1.6 2.5 3.6 2.5 6v2l1 1V21z"/><path d="M5 17.5h7M13 17.5h7"/>',
+'Armas brancas e cerimonial':'<path d="M20 4l-1 4L9.5 17.5l-3-3L16 5z"/><path d="M5 13l6 6"/><path d="M7.5 16.5L4 20"/><circle cx="3.6" cy="20.4" r=".9"/>',
+'Comunicação':'<rect x="7" y="7" width="10" height="14" rx="2"/><path d="M10 7V2.5"/><path d="M10 11h4M10 13.5h4"/><circle cx="12" cy="17.5" r="1.2"/><path d="M19.5 9.5a4 4 0 0 1 0 5M21.5 7.5a7 7 0 0 1 0 9"/>',
+'Proteção individual':'<path d="M12 3L4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/><path d="M12 8.5l1.2 2.5 2.7.3-2 1.8.6 2.7-2.5-1.4-2.5 1.4.6-2.7-2-1.8 2.7-.3z"/>',
+'Contenção e ordem pública':'<circle cx="6.5" cy="16" r="3.8"/><circle cx="17.5" cy="16" r="3.8"/><path d="M8.6 12.8l2.2-3.2M15.4 12.8l-2.2-3.2"/><circle cx="12" cy="8" r="1.6"/><path d="M4.3 12.9l1.6-1.6M19.7 12.9l-1.6-1.6"/>',
+'Iluminação':'<path d="M7.5 3h9l-2 6h-5z"/><rect x="9.5" y="9" width="5" height="12" rx="1"/><path d="M12 12.5v2"/><path d="M5 3.5L3 2M19 3.5L21 2M12 1v0"/>',
+'Uniforme e intempérie':'<path d="M8.5 3L3 6l2 5.5 2.2-1.1V21h9.6V10.4l2.2 1.1L21 6l-5.5-3c-.6 1.6-1.9 2.6-3.5 2.6S9.1 4.6 8.5 3z"/><path d="M12 5.6V21"/>',
+'Outros':'<path d="M3 7.5L12 3l9 4.5-9 4.5z"/><path d="M3 7.5v9l9 4.5 9-4.5v-9"/><path d="M12 12v9"/>'
+};
+const iconeCat=(c,cls)=>`<svg class="${cls||'ico-cat'}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICO_CAT[c]||ICO_CAT['Outros']}</svg>`;
 const CATS=['Armas de fogo','Munição','Armas brancas e cerimonial','Comunicação','Proteção individual','Contenção e ordem pública','Iluminação','Uniforme e intempérie','Outros'];
 const normTxt=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const catOf=t=>t.mun?'Munição':(t.categoria||adivinhaCat(t.nome));
@@ -887,7 +906,7 @@ else if(!ui.matCat){
 corpo=`<div class="cat-grid">${cats.map(c=>{const l=D.tipos.filter(t=>catOf(t)===c);const mun=c==='Munição';
 const tot=l.reduce((a,t)=>{const k=contagem(t.id);a.d+=k.disponivel;a.t+=k.total;a.f+=k.cautelado+k.separado;a.m+=k.manutencao+k.extraviado;return a;},{d:0,t:0,f:0,m:0});
 const p=x=>tot.t?x/tot.t*100:0;
-return `<button class="cat-card" data-act="matCat" data-c="${esc(c)}"><h3>${esc(c)}</h3><span class="n">${l.length} ${mun?(l.length>1?'calibres':'calibre'):(l.length>1?'tipos':'tipo')} · ${contagemPronta?`${tot.d} ${mun?'cartuchos em estoque':'disponíveis de '+tot.t}`:'…'}${tot.f?` · ${tot.f} fora`:''}</span>
+return `<button class="cat-card" data-act="matCat" data-c="${esc(c)}"><span class="cat-ico">${iconeCat(c)}</span><h3>${esc(c)}</h3><span class="n">${l.length} ${mun?(l.length>1?'calibres':'calibre'):(l.length>1?'tipos':'tipo')} · ${contagemPronta?`${tot.d} ${mun?'cartuchos em estoque':'disponíveis de '+tot.t}`:'…'}${tot.f?` · ${tot.f} fora`:''}</span>
 ${contagemPronta&&tot.t?`<div class="bar"><i class="g-free" style="width:${p(tot.d)}%"></i><i class="g-out" style="width:${p(tot.f)}%"></i><i class="g-man" style="width:${p(tot.m)}%"></i></div>`:''}</button>`;}).join('')}</div>
 <details class="perigo"><summary>Excluir todo o material</summary><p class="small" style="margin:.5rem 0">Apaga todos os materiais, unidades e lotes de munição (por exemplo, para recomeçar a importação). Materiais com unidades separadas ou cauteladas são mantidos. O histórico das cautelas continua guardado.</p><button class="btn btn-warn" data-act="excluirTudo">Excluir todo o material…</button></details>`;
 }else{
@@ -895,7 +914,7 @@ const l=ordTipos(D.tipos.filter(t=>catOf(t)===ui.matCat));const nSel=l.filter(t=
 const blocoSel=t=>ui.selModo?`<div class="tipo-sel"><input type="checkbox" data-selt="${t.id}" ${ui.selTipos[t.id]?'checked':''} aria-label="Selecionar ${esc(t.nome)}">${t.mun?vMunTipo(t):bloco(t)}</div>`:(t.mun?vMunTipo(t):bloco(t));
 corpo=`<div class="row between" style="margin:.2rem 0 .4rem"><button class="link" data-act="matCat" data-c="">← Todas as categorias</button>
 ${ui.selModo?'':`<button class="btn btn-sm" data-act="selModo">Selecionar materiais para excluir</button>`}</div>
-<h2 class="cat-h">${esc(ui.matCat)}<span class="muted small">${l.length} ${l.length>1?'tipos':'tipo'}</span></h2>
+<h2 class="cat-h"><span class="cat-tit">${iconeCat(ui.matCat,"ico-h")}${esc(ui.matCat)}</span><span class="muted small">${l.length} ${l.length>1?'tipos':'tipo'}</span></h2>
 ${ui.selModo?`<div class="sel-bar"><span class="grow">Marque os materiais que quer excluir, com todas as unidades. Os que têm unidades separadas ou cauteladas são mantidos.</span>
 <button class="btn btn-sm" data-act="marcarTodos">Marcar todos (${l.length})</button><button class="btn btn-sm" data-act="desmarcarTodos">Desmarcar</button>
 <button class="btn btn-sm btn-warn" data-act="excluirSel" ${nSel?'':'disabled'}>Excluir ${nSel||''} selecionado(s)</button><button class="btn btn-sm" data-act="selModo">Cancelar</button></div>`:''}
