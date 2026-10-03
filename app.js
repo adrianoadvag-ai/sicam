@@ -2261,11 +2261,16 @@ const canceladaPeloMilitar=r=>r.status==='cancelada'&&(r.log||[]).some(l=>l.a===
 function faseCancel(r){const a=(r.log||[]).map(l=>l.a);
 return a.includes('Assinada')?'depois de assinar a retirada (antes da entrega)':a.includes('Separada')?'depois da separação do material':a.includes('Aprovada')?'depois da aprovação':'antes da aprovação';}
 const avisadosCanc=new Set();
+/* Memória dos avisos: guarda a última versão vista de cada cautela, venha de qualquer consulta.
+   Assim a ordem de chegada das consultas não faz um aviso se perder nem se repetir. */
+const prevRes=new Map();
+const antes=id=>prevRes.get(id);
+function lembrarRes(snap,primeira){if(primeira){snap.docs.forEach(d=>prevRes.set(d.id,{id:d.id,...d.data()}));return;}snap.docChanges().forEach(ch=>{if(ch.type!=='removed')prevRes.set(ch.doc.id,{id:ch.doc.id,...ch.doc.data()});});}
 function detectarCancelamentos(snap){
 if(!ehFurriel())return;
 snap.docChanges().forEach(ch=>{
 const r={id:ch.doc.id,...ch.doc.data()};if(!r||r.status!=='cancelada'||avisadosCanc.has(r.id))return;
-const old=D.reservas.find(x=>x.id===r.id);if(!old||!['pendente','aprovada','separada'].includes(old.status))return;
+const old=antes(r.id);if(!old||!['pendente','aprovada','separada'].includes(old.status))return;
 avisadosCanc.add(r.id);
 avisar(`${nr(r.num)} cancelada pelo militar`,`${nomeM(r.userId)} cancelou ${faseCancel(r)}: ${itensTxt(r)}.${(r.unidades||[]).length||(r.municao||[]).length?' O material separado volta ao estoque automaticamente.':''}`);
 if(modal.open&&(modal.textContent||'').includes(nr(r.num))){closeModal();toast(`${nr(r.num)} foi cancelada pelo militar.`,true);}
@@ -2273,27 +2278,28 @@ if(modal.open&&(modal.textContent||'').includes(nr(r.num))){closeModal();toast(`
 }
 function avisosReservas(snap){
 const eu=me();
-snap.docChanges().forEach(ch=>{if(ch.type!=='modified'||!eu||eu.perfil!=='furriel')return;const r={id:ch.doc.id,...ch.doc.data()};const old=D.reservas.find(x=>x.id===r.id);
+snap.docChanges().forEach(ch=>{if(ch.type==='removed'||!eu||eu.perfil!=='furriel')return;const r={id:ch.doc.id,...ch.doc.data()};const old=antes(r.id);
 if(r.devAssCadete&&old&&!old.devAssCadete){avisar(`${nr(r.num)}: devolução assinada`,`${nomeM(r.userId)} assinou a devolução. Confira o material e assine.`);if(ui.devAguardando===r.id&&modal.open)setTimeout(()=>devolver(r.id),300);}});
 snap.docChanges().forEach(ch=>{
 const r={id:ch.doc.id,...ch.doc.data()};
-if(eu&&eu.perfil==='furriel'&&ch.type==='added'&&r.status==='pendente'&&r.userId!==eu.id)
+const jaVisto=prevRes.has(r.id);
+if(eu&&eu.perfil==='furriel'&&!jaVisto&&r.status==='pendente'&&r.userId!==eu.id)
 avisar(`Nova solicitação ${nr(r.num)}`,`${nomeM(r.userId)}: ${itensTxt(r)}`);
-if(eu&&eu.perfil==='furriel'&&ch.type==='added'&&r.origem){const o=D.reservas.find(x=>x.id===r.origem);avisar(`Cautela transferida ${nr(r.num)}`,`${o?nomeM(o.userId):'?'} → ${nomeM(r.userId)}: ${itensTxt(r)}`);}
-if(eu&&eu.perfil!=='furriel'&&ch.type==='added'&&r.origem&&r.userId===eu.id)avisar(`Você recebeu a cautela ${nr(r.num)}`,itensTxt(r));
-if(eu&&eu.perfil==='furriel'&&ch.type==='modified'&&r.status==='separada'&&r.assinatura&&!(D.reservas.find(x=>x.id===r.id)||{}).assinatura)
+if(eu&&eu.perfil==='furriel'&&!jaVisto&&r.origem){const o=D.reservas.find(x=>x.id===r.origem);avisar(`Cautela transferida ${nr(r.num)}`,`${o?nomeM(o.userId):'?'} → ${nomeM(r.userId)}: ${itensTxt(r)}`);}
+if(eu&&eu.perfil!=='furriel'&&!jaVisto&&r.origem&&r.userId===eu.id)avisar(`Você recebeu a cautela ${nr(r.num)}`,itensTxt(r));
+if(eu&&eu.perfil==='furriel'&&jaVisto&&r.status==='separada'&&r.assinatura&&!(antes(r.id)||{}).assinatura)
 avisar(`${nr(r.num)} assinada`,`${nomeM(r.userId)} assinou a retirada. Confira e confirme a entrega.`);
-if(eu&&eu.perfil!=='furriel'&&ch.type==='modified'&&r.userId===eu.id){
-const old=D.reservas.find(x=>x.id===r.id);
-if(old&&old.transferPara&&!r.transferPara){const ult=(r.log||[]).slice(-1)[0]||{};if(ult.a==='Transferência recusada')avisar('Transferência recusada',`${nomeM(old.transferPara)} recusou a transferência de ${nr(r.num)}.`);else if(ult.a!=='Transferência cancelada')avisar('Transferência aceita',`${nomeM(old.transferPara)} aceitou e assinou o recebimento.`);}
-if(old&&old.status!==r.status&&r.status==='cancelada'){const l=(r.log||[]).slice(-1)[0]||{};if(l.a==='Cancelada'&&l.por!==eu.id)avisar(`Solicitação ${nr(r.num)} cancelada pela Furrielação`,String(l.obs||'').replace(/^Pela Furrielação: /,''));}
+if(eu&&eu.perfil!=='furriel'&&jaVisto&&r.userId===eu.id){
+const old=antes(r.id);const novos=old?(r.log||[]).slice((old.log||[]).length):[];
+if(old&&old.transferPara&&!r.transferPara){const ult=novos.find(x=>/^Transferência (recusada|cancelada)$/.test(x.a))||{};if(ult.a==='Transferência recusada')avisar('Transferência recusada',`${nomeM(old.transferPara)} recusou a transferência de ${nr(r.num)}.`);else if(ult.a!=='Transferência cancelada')avisar('Transferência aceita',`${nomeM(old.transferPara)} aceitou e assinou o recebimento.`);}
+if(old&&old.status!==r.status&&r.status==='cancelada'){const l=novos.find(x=>x.a==='Cancelada')||{};if(l.a==='Cancelada'&&l.por!==eu.id)avisar(`Solicitação ${nr(r.num)} cancelada pela Furrielação`,String(l.obs||'').replace(/^Pela Furrielação: /,''));}
 if(old&&old.status!==r.status&&r.status!=='cancelada'&&r.status!=='transferida')avisar(`Solicitação ${nr(r.num)}`,(ST[r.status]||[r.status])[0]);
 }
 });
 }
 function escutarTudo(perfil){
 const furr=perfil==='furriel',uid=sess.userId;
-histTudo=false;histDias=0;baldes.resA=[];baldes.resB=[];baldes.resTudo=[];baldes.cA=[];baldes.cB=[];dispCount={};contagemPronta=false;cacheU.clear();ui.unidTipo={};
+prevRes.clear();histTudo=false;histDias=0;baldes.resA=[];baldes.resB=[];baldes.resTudo=[];baldes.cA=[];baldes.cB=[];dispCount={};contagemPronta=false;cacheU.clear();ui.unidTipo={};
 const corte=new Date(Date.now()-JANELA_DIAS*864e5).toISOString();
 const fontes=furr?[['users',collection(db,'users')],['tipos',collection(db,'tipos')],['unidades',query(collection(db,'unidades'),where('status','in',FORA))],
 ['resA',query(collection(db,'reservas'),where('status','in',['pendente','aprovada','separada','cautelada']))],
@@ -2339,8 +2345,7 @@ return;}
 const un=onSnapshot(ref,snap=>{
 const primeira=!loaded[nome];
 if(nome==='users'&&!primeira){const eu=me();if(eu&&eu.perfil==='furriel')snap.docChanges().forEach(ch=>{const u=ch.doc.data();if(u.pendente&&(ch.type==='added'||(ch.type==='modified'&&!(D.users.find(x=>x.id===ch.doc.id)||{}).pendente)))avisar(u.perfil==='furriel'?'Pedido de conta de Furriel':'Novo cadastro para liberar',`${u.grad||''} ${u.nome} – ${u.pelotao||''}`);});}
-if(!primeira&&(nome==='reservas'||nome==='resA'||nome==='cB'))avisosReservas(snap);
-if(!primeira&&(nome==='resA'||nome==='resB'))detectarCancelamentos(snap);
+if(['reservas','resA','resB','cA','cB'].includes(nome)){if(!primeira){avisosReservas(snap);if(nome==='resA'||nome==='resB')detectarCancelamentos(snap);}lembrarRes(snap,primeira);}
 if(!primeira&&furr&&nome==='unidades'){const ids=[];snap.docChanges().forEach(ch=>{const x=ch.doc.data();if(x&&x.tipoId)ids.push(x.tipoId);const ant=D.unidades.find(u=>u.id===ch.doc.id);if(ant)ids.push(ant.tipoId);});
 if(ids.length){recontar(ids);Object.keys(ui.unidTipo||{}).forEach(t=>{if(ids.includes(t))carregarUnidTipo(t,true);});}}
 if(!primeira&&furr&&nome==='tipos'){const novos=snap.docChanges().filter(ch=>ch.type==='added').map(ch=>ch.doc.id);if(novos.length)recontar(novos);}
@@ -2356,7 +2361,7 @@ if(nome==='users'){const eu=me();if(eu&&!eu.ativo){loginMsg='Seu acesso foi desa
 depois(primeira);
 },err=>{console.error(err);
 if(nome==='cB'&&err.code==='failed-precondition'){console.warn('Índice userId+retirada ainda não criado; usando consulta simples.',err.message);
-unsubs.push(onSnapshot(query(collection(db,'reservas'),where('userId','==',uid)),snap=>{const prim=!loaded.cB;if(!prim)avisosReservas(snap);baldes.cB=normRes(snap.docs.map(d=>({id:d.id,...d.data()})));D.reservas=juntarReservas();D.unidades=Object.entries(D.reservas.reduce((a,r)=>Object.assign(a,r.uinfo||{}),{})).map(([id,x])=>({id,...x}));if(prim)pronto();else if(fase==='app'&&!modal.open)render();},()=>pronto()));return;}
+unsubs.push(onSnapshot(query(collection(db,'reservas'),where('userId','==',uid)),snap=>{const prim=!loaded.cB;if(!prim)avisosReservas(snap);lembrarRes(snap,prim);baldes.cB=normRes(snap.docs.map(d=>({id:d.id,...d.data()})));D.reservas=juntarReservas();D.unidades=Object.entries(D.reservas.reduce((a,r)=>Object.assign(a,r.uinfo||{}),{})).map(([id,x])=>({id,...x}));if(prim)pronto();else if(fase==='app'&&!modal.open)render();},()=>pronto()));return;}
 if(err.code==='permission-denied'){loginMsg='Sem permissão de acesso. Procure a Furrielação.';signOut(auth);}else toast(erroFirebase(err),true);});
 unsubs.push(un);
 });
