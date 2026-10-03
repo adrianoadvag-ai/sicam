@@ -144,6 +144,8 @@ tr.cat-row td{background:var(--surface-2);font-weight:600;font-size:.82rem;color
 .ico-chip{width:16px;height:16px;flex:0 0 16px;display:block;margin:0}
 .chips .chip{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;flex:0 0 auto;line-height:1.2;white-space:nowrap;padding:.45rem .85rem;box-sizing:border-box}
 .chips{align-items:center}
+.side .bloq-sel{margin:.3rem .75rem .2rem;font-size:.78rem;opacity:.9}
+.side .bloq-sel input{accent-color:var(--gold)}
 .tema-sel{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface)}
 .tema-sel button{background:none;border:0;padding:.4rem .8rem;font-size:.85rem;cursor:pointer;color:var(--ink);min-height:34px}
 .tema-sel button[aria-pressed="true"]{background:var(--olive);color:var(--olive-ink);font-weight:600}
@@ -508,7 +510,7 @@ return `<div class="card"><dl class="meta" style="margin:0">
 <dt>Solicitações</dt><dd>${tot.length} no total</dd></dl></div>
 <p class="small muted" style="margin-top:.8rem">${tot.some(r=>r.status==='cautelada')?'Para passar material a outro cadete ou devolvê-lo, use a aba Minhas cautelas.':'Transferência e devolução ficam na aba Minhas cautelas, depois que a Furrielação entregar o material a você.'}</p>
 <div class="card" style="margin-top:1rem"><p style="font-weight:600;margin-bottom:.5rem">Aparência</p>${seletorTema()}<p class="small muted" style="margin-top:.5rem">Automático segue o modo claro ou escuro do celular.</p></div>
-<div class="stack" style="margin-top:1rem">${botaoAvisos()}${bioOk?(bioLocal(u.id)&&(u.passkeys||[]).some(k=>k.id===bioLocal(u.id))?'<p class="small muted">Assinatura por digital/Face ID: ativada neste celular.</p>':'<button class="btn btn-block" data-act="ativarBio">Ativar assinatura por digital, Face ID ou senha do celular</button>'):''}<button class="btn btn-block" data-act="senha">Trocar minha senha</button><button class="btn btn-block" data-act="sair">Sair</button></div>`;
+<div class="stack" style="margin-top:1rem">${botaoAvisos()}${bioOk?(bioLocal(u.id)&&(u.passkeys||[]).some(k=>k.id===bioLocal(u.id))?'<p class="small muted">Assinatura por digital/Face ID: ativada neste celular.</p>'+seletorBloqueio():'<button class="btn btn-block" data-act="ativarBio">Ativar assinatura por digital, Face ID ou senha do celular</button>'):''}<button class="btn btn-block" data-act="senha">Trocar minha senha</button><button class="btn btn-block" data-act="sair">Sair</button></div>`;
 }
 function fichaCarrinho(){
 const itens=Object.entries(ui.cart).filter(([,q])=>q>0);
@@ -729,26 +731,53 @@ return `<div class="shell"><nav class="side" aria-label="Menu do Furriel">
 <div class="brand"><img class="seal-img" src="brasao-apmg.png" alt="Brasão da APMG"><div><h1>SICAM</h1><p>Furrielação APMG</p></div></div>
 ${NAV.map(([k,l])=>`<button class="nav-b" data-act="go" data-v="${k}" ${v===k?'aria-current="page"':''}><span>${l}</span>${k==='solic'&&pend?`<span class="badge">${pend}</span>`:''}${k==='solic'&&ncanc?`<span class="badge red" title="Canceladas pelo militar">${ncanc}</span>`:''}${k==='ativas'&&late?`<span class="badge red">${late}</span>`:''}${k==='militares'&&upend?`<span class="badge">${upend}</span>`:''}</button>`).join('')}
 <div class="foot"><div class="who">${esc(nomeM(sess.userId))}</div>
-${bioOk&&!temBioAqui()?'<button class="nav-b" data-act="ativarBio">Ativar digital / Face ID</button>':''}${seletorTema()}<button class="nav-b" data-act="senha">Trocar senha</button>
+${bioOk&&!temBioAqui()?'<button class="nav-b" data-act="ativarBio">Ativar digital / Face ID</button>':''}${seletorBloqueio()}${seletorTema()}<button class="nav-b" data-act="senha">Trocar senha</button>
 <button class="nav-b" data-act="sair">Sair</button></div>
 </nav><main class="a-main">${views[v]()}</main></div>`;
 }
 function acoesAdmin(r,inModal){
 const cls='btn'+(inModal?'':' btn-sm');
 if(r.status==='pendente')return `<button class="${cls} btn-warn" data-act="recusar" data-id="${r.id}">Recusar</button><button class="${cls} btn-pri" data-act="aprovar" data-id="${r.id}">Aprovar</button>`;
-if(r.status==='aprovada')return `<button class="${cls} btn-pri" data-act="separar" data-id="${r.id}">Separar material</button>`;
-if(r.status==='separada')return r.assinatura?`<button class="${cls} btn-pri" data-act="confirmarEntrega" data-id="${r.id}">Confirmar entrega</button>`
-:`<button class="${cls}" data-act="cautelar" data-id="${r.id}">Assinar no balcão</button>`;
+const cancF=`<button class="${cls} btn-warn" data-act="cancelarF" data-id="${r.id}">Cancelar</button>`;
+if(r.status==='aprovada')return cancF+`<button class="${cls} btn-pri" data-act="separar" data-id="${r.id}">Separar material</button>`;
+if(r.status==='separada')return cancF+(r.assinatura?`<button class="${cls} btn-pri" data-act="confirmarEntrega" data-id="${r.id}">Confirmar entrega</button>`
+:`<button class="${cls}" data-act="cautelar" data-id="${r.id}">Assinar no balcão</button>`);
 if(r.status==='cautelada')return `<button class="${cls} btn-pri" data-act="devolver" data-id="${r.id}">${r.devAssCadete?'Conferir e assinar devolução':'Registrar devolução'}</button>`;
 if(r.status==='transferida'&&inModal){const n=D.reservas.find(x=>x.origem===r.id);if(n)return `<button class="btn" data-act="ver" data-id="${n.id}">Ver cautela de destino</button>`;}
 return inModal?`<button class="btn" data-act="fechar">Fechar</button>`:'';
+}
+const retiradaAtrasada=r=>['aprovada','separada'].includes(r.status)&&r.retirada&&Date.now()>new Date(r.retirada).getTime()+3600e3;
+const MOTIVOS_CANC=['Não compareceu para retirada','Pedido em duplicidade','A pedido do militar','Material indisponível'];
+function cancelarPeloFurriel(id){
+const r=R(id);if(!r||!['aprovada','separada'].includes(r.status))return;
+openModal('Cancelar solicitação – '+nr(r.num),`<form id="f-cancf" data-id="${r.id}" class="stack">
+<p>${esc(nomeM(r.userId))} · ${esc(user(r.userId).pelotao||'')}</p>
+<div class="ficha">${itensLi(r)}<p class="small muted" style="margin-top:.4rem">Retirada prevista: ${fmt(r.retirada)}${retiradaAtrasada(r)?' · <b class="c-stamp">atrasada</b>':''}</p></div>
+<label class="f"><span>Motivo</span><select class="i" name="motivo">${MOTIVOS_CANC.map(m=>`<option>${m}</option>`).join('')}<option value="outro">Outro (descrever abaixo)</option></select></label>
+<label class="f"><span>Observação (opcional; obrigatória se "Outro")</span><textarea class="i" name="obs" placeholder="Ex.: militar não compareceu até 18h"></textarea></label>
+${r.status==='separada'?'<p class="small muted">O material separado volta ao estoque automaticamente.</p>':''}
+${r.assinatura?`<label class="check aviso"><input type="checkbox" name="conf" required><span>O militar <b>já assinou a retirada</b> no celular (${fmt(r.assinatura.em)}). Confirmo que ele <b>não recebeu</b> o material.</span></label>`:''}
+<p class="small muted">O militar recebe um aviso com o motivo.</p>
+<p class="erro" id="cancf-erro"></p>
+<button class="btn btn-warn btn-block">Cancelar solicitação</button></form>`);
+}
+async function confirmarCancelF(form,fd){
+const r=R(form.dataset.id);if(!r)return;
+let mot=fd.get('motivo');const obs=String(fd.get('obs')||'').trim();
+if(mot==='outro'){if(!obs){$('#cancf-erro').textContent='Descreva o motivo.';return;}mot=obs;}
+const texto='Pela Furrielação: '+mot+(obs&&mot!==obs?' – '+obs:'');
+try{await runTransaction(db,async tx=>{const s1=await tx.get(doc(db,'reservas',r.id));const o=s1.data();
+if(!o||!['aprovada','separada'].includes(o.status))throw {msg:'Esta solicitação mudou de situação (pode ter sido entregue ou cancelada). Feche e confira.'};
+tx.update(doc(db,'reservas',r.id),{status:'cancelada',log:[...(o.log||[]),{t:nowISO(),a:'Cancelada',por:sess.userId,obs:texto}]});});}
+catch(e){$('#cancf-erro').textContent=e&&e.msg?e.msg:erroFirebase(e);return;}
+closeModal();toast(`${nr(r.num)} cancelada.${(r.unidades||[]).length||(r.municao||[]).length?' O material separado volta ao estoque.':''}`);
 }
 function cardAdmin(r){
 return `<div class="card">
 <button class="clickable" style="background:none;border:0;padding:0" data-act="ver" data-id="${r.id}">
 <div class="card-t"><div><span class="nr">${nr(r.num)}</span><p style="font-weight:600">${esc(nomeM(r.userId))}</p></div>${stamp(r)}</div>
 ${itensLi(r)}${['pendente','aprovada'].includes(r.status)?(r.itens||[]).map(i=>{const c=contagem(i.tipoId);return i.qtd>c.disponivel?`<p class="falta">⚠ ${esc(tipo(i.tipoId).nome)}: há ${c.disponivel} disponível(is) para ${i.qtd} pedido(s)</p>`:'';}).join(''):''}
-<dl class="meta"><dt>Retirada</dt><dd>${fmt(r.retirada)}</dd><dt>Devolução</dt><dd class="${atrasada(r)?'c-stamp':''}">${fmt(r.devolucao)}</dd><dt>Finalidade</dt><dd>${esc(r.finalidade)}</dd></dl>
+<dl class="meta"><dt>Retirada</dt><dd>${fmt(r.retirada)}${retiradaAtrasada(r)?' <span class="tag c-stamp">Retirada atrasada</span>':''}</dd><dt>Devolução</dt><dd class="${atrasada(r)?'c-stamp':''}">${fmt(r.devolucao)}</dd><dt>Finalidade</dt><dd>${esc(r.finalidade)}</dd></dl>
 ${r.status==='separada'?(r.assinatura?`<p class="small c-ok" style="margin-top:.5rem">Assinado pelo militar às ${fmt(r.assinatura.em)}, ${r.assinatura.metodo==='biometria'?'com digital/Face ID':'com senha'}.</p>`
 :'<p class="small muted" style="margin-top:.5rem">Aguardando o militar assinar no celular.</p>'):''}
 </button>
@@ -1760,17 +1789,18 @@ if(l.a==='Cautelada'&&(!meus||l.por===sess.userId))ev.push({...m,tipo:'Cautela e
 else if(l.a==='Devolvida'&&(!meus||l.por===sess.userId))ev.push({...m,tipo:'Devolução recebida'});
 else if(l.a==='Transferência')ev.push({...m,tipo:'Transferência entre militares'});
 else if(l.a==='Cancelada'&&l.por===r.userId)ev.push({...m,tipo:'Cancelada pelo militar'});
+else if(l.a==='Cancelada'&&l.por!==r.userId&&(!meus||l.por===sess.userId))ev.push({...m,tipo:'Cancelada pela Furrielação'});
 else if(l.a==='Recusada'&&(!meus||l.por===sess.userId))ev.push({...m,tipo:'Solicitação recusada'});
 }));
 ev.sort((x,y)=>x.t.localeCompare(y.t));
 const ativas=D.reservas.filter(r=>r.status==='cautelada').sort((x,y)=>String(x.devolucao).localeCompare(String(y.devolucao)));
 const aguardando=D.reservas.filter(r=>['pendente','aprovada','separada'].includes(r.status)).sort((x,y)=>String(x.retirada).localeCompare(String(y.retirada)));
-const grupos=['Cautela entregue','Devolução recebida','Transferência entre militares','Cancelada pelo militar','Solicitação recusada'];
+const grupos=['Cautela entregue','Devolução recebida','Transferência entre militares','Cancelada pelo militar','Cancelada pela Furrielação','Solicitação recusada'];
 return {ini,fim,meus,ev,ativas,aguardando,grupos,descR,atraso:ativas.filter(atrasada)};
 }
 function previaPlantao(d){
 const cont=g=>d.ev.filter(e=>e.tipo===g).length;
-const linha=e=>`<li><b>${fmt(e.t)}</b> · ${nr(e.r.num)} · <b>${esc(nomeM(e.r.userId))}</b> (${esc(user(e.r.userId).pelotao||'')})<br><span class="small">${esc(d.descR(e.r))}</span>${e.tipo==='Devolução recebida'&&e.obs?`<br><span class="small muted">${esc(e.obs)}</span>`:''}</li>`;
+const linha=e=>`<li><b>${fmt(e.t)}</b> · ${nr(e.r.num)} · <b>${esc(nomeM(e.r.userId))}</b> (${esc(user(e.r.userId).pelotao||'')})<br><span class="small">${esc(d.descR(e.r))}</span>${(e.tipo==='Devolução recebida'||e.tipo==='Cancelada pela Furrielação')&&e.obs?`<br><span class="small muted">${esc(e.obs)}</span>`:''}</li>`;
 return `<div class="sit-resumo" style="margin-top:.8rem">${d.grupos.map(g=>`<div><b>${cont(g)}</b><span>${g.toLowerCase()}</span></div>`).join('')}<div><b>${d.ativas.length}</b><span>cautelas ativas no fim</span></div></div>
 ${d.grupos.filter(cont).map(g=>`<div class="plantao-sec"><h3>${g} (${cont(g)})</h3><ul style="padding:0">${d.ev.filter(e=>e.tipo===g).map(linha).join('')}</ul></div>`).join('')||'<p class="small muted" style="margin-top:.8rem">Nenhuma movimentação no período.</p>'}
 <div class="plantao-sec"><h3>Pendências para quem assume</h3><ul style="padding:0">
@@ -1808,7 +1838,7 @@ pg.drawText('SICAM',{x:M,y:H-36,size:20,font:F2,color:P.rgb(1,1,1)});pg.drawText
 y=H-88;texto('Relatório do plantão',{f:F2,s:14});y-=2;texto(`Período: ${periodo}`,{f:F2,s:10});texto(`Furriel: ${nomeM(sess.userId)}${d.meus?' (somente registros feitos por ele)':''}`,{s:9.5});texto(`Gerado em ${fmtC(nowISO())}`,{s:8.5,c:cinza});
 y-=4;texto(d.grupos.map(g=>`${g}: ${d.ev.filter(x=>x.tipo===g).length}`).join('   ·   ')+`   ·   Cautelas ativas no fim: ${d.ativas.length}`,{s:9,c:cinza});
 for(const g of d.grupos){const l=d.ev.filter(x=>x.tipo===g);if(!l.length)continue;secao(`${g} (${l.length})`);
-for(const x of l){texto(`${fmtC(x.t)}  ·  ${nr(x.r.num)}  ·  ${nomeM(x.r.userId)}${user(x.r.userId).pelotao?' ('+user(x.r.userId).pelotao+')':''}`,{f:F2,s:9});texto(d.descR(x.r),{x:M+10,w:W-2*M-10,s:8.5});if(g==='Devolução recebida'&&x.obs)texto(x.obs,{x:M+10,w:W-2*M-10,s:8,c:cinza});y-=3;}}
+for(const x of l){texto(`${fmtC(x.t)}  ·  ${nr(x.r.num)}  ·  ${nomeM(x.r.userId)}${user(x.r.userId).pelotao?' ('+user(x.r.userId).pelotao+')':''}`,{f:F2,s:9});texto(d.descR(x.r),{x:M+10,w:W-2*M-10,s:8.5});if((g==='Devolução recebida'||g==='Cancelada pela Furrielação')&&x.obs)texto(x.obs,{x:M+10,w:W-2*M-10,s:8,c:cinza});y-=3;}}
 if(!d.ev.length){secao('Movimentações');texto('Nenhuma movimentação no período.',{c:cinza});}
 secao(`Pendências para quem assume o serviço`);
 if(d.atraso.length){texto(`Em atraso (${d.atraso.length}):`,{f:F2,s:9,c:vermelho});d.atraso.forEach(r=>{texto(`${nr(r.num)} · ${nomeM(r.userId)} · devolução prevista ${fmtC(r.devolucao)}`,{s:8.5,c:vermelho,x:M+10});texto(d.descR(r),{x:M+20,w:W-2*M-20,s:8});});y-=3;}
@@ -2020,6 +2050,8 @@ sitMin:()=>{ui.sitMin=true;try{localStorage.setItem('sicam.sitMin','1');}catch(e
 sitMax:()=>{ui.sitMin=false;try{localStorage.setItem('sicam.sitMin','0');}catch(e){}render();},
 matDet:el=>materialDetalhe(el.dataset.id),
 plantao:()=>abrirPlantao(),
+cancelarF:el=>cancelarPeloFurriel(el.dataset.id),
+desbloquear:()=>desbloquear(),
 tema:el=>{temaAtual=el.dataset.tema;try{localStorage.setItem('sicam.tema',temaAtual);}catch(e){}aplicarTema(temaAtual);render();},
 histMin:()=>{ui.histMin=true;try{localStorage.setItem('sicam.histMin','1');}catch(e){}atualizarHist();},
 histMax:()=>{ui.histMin=false;try{localStorage.setItem('sicam.histMin','0');}catch(e){}atualizarHist();},
@@ -2034,11 +2066,12 @@ e.preventDefault();
 try{await f(el);}catch(err){console.error(err);toast(erroFirebase(err),true);}
 });
 document.addEventListener('toggle',e=>{if(e.target.matches&&e.target.matches('details.hist-mes')){const k=e.target.dataset.mes;ui.histAbertos=ui.histAbertos||new Set();if(e.target.open)ui.histAbertos.add(k);else ui.histAbertos.delete(k);return;}if(e.target.matches&&e.target.matches('details.tipo')&&e.target.open){ui.aberto=e.target.dataset.tipo;if(ehFurriel()&&!tipo(ui.aberto).mun&&ui.unidTipo[ui.aberto]===undefined)carregarUnidTipo(ui.aberto);}},true);
-document.addEventListener('change',e=>{if(e.target.dataset&&e.target.dataset.chk==="verInativos"){ui.mostrarInativos=e.target.checked;render();return;}
+document.addEventListener('change',e=>{if(e.target.dataset&&e.target.dataset.chk==='bloqueio'){const u=me();if(u){try{localStorage.setItem(bloqKey(u.id),e.target.checked?'1':'0');}catch(x){}toast(e.target.checked?'O app vai pedir digital/Face ID ao abrir neste aparelho.':'Bloqueio por digital/Face ID desligado neste aparelho.');}return;}
+if(e.target.dataset&&e.target.dataset.chk==="verInativos"){ui.mostrarInativos=e.target.checked;render();return;}
 const tu=e.target.dataset&&e.target.dataset.selu;if(tu){ui.selU[tu]=ui.selU[tu]||{};ui.selU[tu][e.target.value]=e.target.checked;const n=Object.values(ui.selU[tu]).filter(Boolean).length;const b=document.querySelector(`[data-act=excluirUnid][data-id="${tu}"]`);if(b){b.disabled=!n;b.textContent=`Excluir ${n||''} unidade(s)`;}return;}
 const id=e.target.dataset&&e.target.dataset.selt;if(id){ui.selTipos[id]=e.target.checked;const b=document.querySelector('[data-act=excluirSel]');const n=Object.values(ui.selTipos).filter(Boolean).length;if(b){b.disabled=!n;b.textContent=`Excluir ${n||''} selecionado(s)`;}}});
 const forms={
-'f-login':async(fd,f)=>{loginMsg='';ui.telaLogin=f.dataset.tela||'cadete';
+'f-login':async(fd,f)=>{loginMsg='';ui.loginAgora=true;ui.telaLogin=f.dataset.tela||'cadete';
 try{await signInWithEmailAndPassword(auth,emailDe(fd.get('login')),fd.get('senha'));}
 catch(e){$('#login-erro').textContent=erroFirebase(e);}},
 'f-setup':async fd=>{
@@ -2061,6 +2094,7 @@ bootstrapping=false;await aoMudarLogin(auth.currentUser);
 'f-rec':async(fd,f)=>{const r=R(f.dataset.id);await updateDoc(doc(db,'reservas',r.id),{status:'recusada',log:[...r.log,entrada('Recusada',String(fd.get('m')).trim())]});closeModal();toast(`${nr(r.num)} recusada.`);},
 'f-sep':(fd,f)=>confirmarSeparacao(f),
 'f-trf':(fd,f)=>confirmarTransf(f,fd),
+'f-cancf':(fd,f)=>confirmarCancelF(f,fd),
 'f-ass':fd=>assinarComSenha(fd),
 'f-devbalcao':(fd,f)=>devolucaoBalcao(f,fd),
 'f-aceite':(fd,f)=>confirmarAceite(f,fd),
@@ -2252,6 +2286,7 @@ avisar(`${nr(r.num)} assinada`,`${nomeM(r.userId)} assinou a retirada. Confira e
 if(eu&&eu.perfil!=='furriel'&&ch.type==='modified'&&r.userId===eu.id){
 const old=D.reservas.find(x=>x.id===r.id);
 if(old&&old.transferPara&&!r.transferPara){const ult=(r.log||[]).slice(-1)[0]||{};if(ult.a==='Transferência recusada')avisar('Transferência recusada',`${nomeM(old.transferPara)} recusou a transferência de ${nr(r.num)}.`);else if(ult.a!=='Transferência cancelada')avisar('Transferência aceita',`${nomeM(old.transferPara)} aceitou e assinou o recebimento.`);}
+if(old&&old.status!==r.status&&r.status==='cancelada'){const l=(r.log||[]).slice(-1)[0]||{};if(l.a==='Cancelada'&&l.por!==eu.id)avisar(`Solicitação ${nr(r.num)} cancelada pela Furrielação`,String(l.obs||'').replace(/^Pela Furrielação: /,''));}
 if(old&&old.status!==r.status&&r.status!=='cancelada'&&r.status!=='transferida')avisar(`Solicitação ${nr(r.num)}`,(ST[r.status]||[r.status])[0]);
 }
 });
@@ -2342,10 +2377,35 @@ aguardandoUnsub=onSnapshot(doc(db,'users',u.uid),d=>{const x=d.data();if(x&&x.at
 else if(x&&!x.pendente&&!x.ativo){loginMsg='Seu cadastro não foi liberado. Procure a Furrielação.';signOut(auth);}},()=>{});
 return;}
 if(!s.data().ativo){loginMsg='Seu acesso foi desativado. Procure a Furrielação.';await signOut(auth);return;}
-sess={userId:u.uid};ui.view=null;uinfoFeito=false;escutarTudo(s.data().perfil);
+sess={userId:u.uid};ui.view=null;uinfoFeito=false;
+ui.bloqueado=!ui.loginAgora&&podeBloquear(u.uid)&&bloqueioLigado(u.uid,s.data().perfil);ui.loginAgora=false;
+escutarTudo(s.data().perfil);
 }catch(e){console.error(e);erroMsg=erroFirebase(e);fase='erro';render();}
 }
 /* ============ Render ============ */
+/* Bloqueio do app: ao abrir (com sessão já guardada) ou ao voltar após 5 min, pede digital/Face ID/PIN do aparelho.
+   A verificação acontece só no aparelho; nada é enviado ao Firebase. */
+const bloqKey=uid=>'sicam.bloqueio.'+uid;
+function bloqueioLigado(uid,perfil){let v=null;try{v=localStorage.getItem(bloqKey(uid));}catch(e){}if(v==='1')return true;if(v==='0')return false;return perfil==='furriel';}
+const podeBloquear=uid=>!!(bioOk&&bioLocal(uid));
+let ocultoEm=0;
+document.addEventListener('visibilitychange',()=>{if(document.hidden){ocultoEm=Date.now();return;}
+if(sess&&fase==='app'&&!ui.bloqueado&&ocultoEm&&Date.now()-ocultoEm>5*60e3){const u=me();if(u&&podeBloquear(u.id)&&bloqueioLigado(u.id,u.perfil)){ui.bloqueado=true;try{if(modal.open)closeModal();}catch(e){}render();}}});
+function vBloqueio(){const u=me()||{};
+return `<main class="login"><div class="login-card"><div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>${esc(nomeM(u.id))}</p></div></div>
+<p class="aviso" style="margin-bottom:1rem">🔒 O SICAM está bloqueado neste aparelho. Use a digital, o Face ID ou a senha do celular para continuar.</p>
+<p class="erro" id="bloq-erro"></p>
+<button class="btn btn-pri btn-block" data-act="desbloquear">👆 Desbloquear</button>
+<p style="text-align:center;margin-top:1rem"><button class="link" data-act="sair">Entrar com e-mail e senha</button></p></div></main>`;}
+async function desbloquear(){
+const id=bioLocal(sess.userId);if(!id){ui.bloqueado=false;render();return;}
+try{const ch=crypto.getRandomValues(new Uint8Array(32));
+await navigator.credentials.get({publicKey:{challenge:ch,rpId:location.hostname,allowCredentials:[{type:'public-key',id:ub64u(id)}],userVerification:'required',timeout:60000}});
+ui.bloqueado=false;render();}
+catch(e){const el=$('#bloq-erro');if(el)el.textContent='Não foi possível confirmar. Tente de novo ou entre com e-mail e senha.';}
+}
+function seletorBloqueio(){const u=me();if(!u||!podeBloquear(u.id))return '';const on=bloqueioLigado(u.id,u.perfil);
+return `<label class="check small bloq-sel"><input type="checkbox" data-chk="bloqueio" ${on?'checked':''}><span>Pedir digital/Face ID ao abrir o app</span></label>`;}
 function render(){
 const ae=document.activeElement, keep=ae&&ae.dataset&&ae.dataset.inp, pos=keep?ae.selectionStart:0;
 let html;
@@ -2358,6 +2418,7 @@ else if(fase==='cadastroF')html=vCadastroF();
 else if(fase==='verificar')html=vVerificar();
 else if(fase==='aguardando')html=vAguardando();
 else if(fase==='login'||!sess||!me())html=fase==='app'?vCarregando():(ui.tela==='furriel'?vLoginFurriel():vLogin());
+else if(ui.bloqueado)html=vBloqueio();
 else html=me().perfil==='furriel'?vAdmin():vApp();
 $('#app').innerHTML=html;
 if(keep){const el=document.querySelector(`[data-inp="${keep}"]`);if(el){el.focus();try{el.setSelectionRange(pos,pos);}catch(e){}}}
