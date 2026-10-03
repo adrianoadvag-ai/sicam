@@ -141,7 +141,9 @@ tr.cat-row td{background:var(--surface-2);font-weight:600;font-size:.82rem;color
 .cat-card:hover .cat-ico{background:var(--olive-soft)}
 .cat-tit{display:inline-flex;align-items:center;gap:.5rem}
 .ico-h{width:26px;height:26px;color:var(--blue);flex:none}
-.ico-chip{width:17px;height:17px;vertical-align:-3px;margin-right:.35rem}
+.ico-chip{width:16px;height:16px;flex:0 0 16px;display:block;margin:0}
+.chips .chip{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;flex:0 0 auto;line-height:1.2;white-space:nowrap;padding:.45rem .85rem;box-sizing:border-box}
+.chips{align-items:center}
 .tema-sel{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--surface)}
 .tema-sel button{background:none;border:0;padding:.4rem .8rem;font-size:.85rem;cursor:pointer;color:var(--ink);min-height:34px}
 .tema-sel button[aria-pressed="true"]{background:var(--olive);color:var(--olive-ink);font-weight:600}
@@ -842,7 +844,8 @@ const ICO_CAT={
 'Uniforme e intempérie':'<path d="M8.5 3L3 6l2 5.5 2.2-1.1V21h9.6V10.4l2.2 1.1L21 6l-5.5-3c-.6 1.6-1.9 2.6-3.5 2.6S9.1 4.6 8.5 3z"/><path d="M12 5.6V21"/>',
 'Outros':'<path d="M3 7.5L12 3l9 4.5-9 4.5z"/><path d="M3 7.5v9l9 4.5 9-4.5v-9"/><path d="M12 12v9"/>'
 };
-const iconeCat=(c,cls)=>`<svg class="${cls||'ico-cat'}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICO_CAT[c]||ICO_CAT['Outros']}</svg>`;
+const TAM_ICO={'ico-chip':16,'ico-h':26,'ico-cat':34};
+const iconeCat=(c,cls)=>`<svg class="${cls||'ico-cat'}" width="${TAM_ICO[cls||'ico-cat']||24}" height="${TAM_ICO[cls||'ico-cat']||24}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICO_CAT[c]||ICO_CAT['Outros']}</svg>`;
 const CATS=['Armas de fogo','Munição','Armas brancas e cerimonial','Comunicação','Proteção individual','Contenção e ordem pública','Iluminação','Uniforme e intempérie','Outros'];
 const normTxt=x=>String(x||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const catOf=t=>t.mun?'Munição':(t.categoria||adivinhaCat(t.nome));
