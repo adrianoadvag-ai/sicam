@@ -724,12 +724,13 @@ function vAdmin(){
 const v=ui.view||'painel';
 const pend=D.reservas.filter(r=>r.status==='pendente').length,ncanc=D.reservas.filter(r=>canceladaPeloMilitar(r)&&!r.cienteFurriel).length;
 const late=D.reservas.filter(atrasada).length;
+const nativ=D.reservas.filter(r=>r.status==='cautelada').length;
 const upend=D.users.filter(u=>u.pendente).length;
 document.title=(pend?`(${pend}) `:'')+'SICAM – Sistema Integrado de Cautela de Armamento e Munição';
 const views={painel:vPainel,solic:vSolic,ativas:vAtivas,material:vMaterial,militares:vMilitares,hist:vHist};
 return `<div class="shell"><nav class="side" aria-label="Menu do Furriel">
 <div class="brand"><img class="seal-img" src="brasao-apmg.png" alt="Brasão da APMG"><div><h1>SICAM</h1><p>Furrielação APMG</p></div></div>
-${NAV.map(([k,l])=>`<button class="nav-b" data-act="go" data-v="${k}" ${v===k?'aria-current="page"':''}><span>${l}</span>${k==='solic'&&pend?`<span class="badge">${pend}</span>`:''}${k==='solic'&&ncanc?`<span class="badge red" title="Canceladas pelo militar">${ncanc}</span>`:''}${k==='ativas'&&late?`<span class="badge red">${late}</span>`:''}${k==='militares'&&upend?`<span class="badge">${upend}</span>`:''}</button>`).join('')}
+${NAV.map(([k,l])=>`<button class="nav-b" data-act="go" data-v="${k}" ${v===k?'aria-current="page"':''}><span>${l}</span>${k==='solic'&&pend?`<span class="badge">${pend}</span>`:''}${k==='solic'&&ncanc?`<span class="badge red" title="Canceladas pelo militar">${ncanc}</span>`:''}${k==='ativas'&&nativ?`<span class="badge" title="Cautelas ativas">${nativ}</span>`:''}${k==='ativas'&&late?`<span class="badge red" title="Com devolução em atraso">${late}</span>`:''}${k==='militares'&&upend?`<span class="badge">${upend}</span>`:''}</button>`).join('')}
 <div class="foot"><div class="who">${esc(nomeM(sess.userId))}</div>
 ${bioOk&&!temBioAqui()?'<button class="nav-b" data-act="ativarBio">Ativar digital / Face ID</button>':''}${seletorBloqueio()}${seletorTema()}<button class="nav-b" data-act="senha">Trocar senha</button>
 <button class="nav-b" data-act="sair">Sair</button></div>
@@ -828,7 +829,7 @@ ${D.reservas.some(r=>canceladaPeloMilitar(r)&&!r.cienteFurriel)?`<div class="avi
 <button class="kpi" data-act="go" data-v="solic"><strong>${c('pendente')}</strong><span>aguardando aprovação</span></button>
 <button class="kpi" data-act="go" data-v="solic"><strong>${c('aprovada')+c('separada')}</strong><span>a separar ou retirar</span></button>
 <button class="kpi" data-act="go" data-v="ativas"><strong>${c('cautelada')}</strong><span>cautelas ativas</span></button>
-<button class="kpi${late?' alert':''}" data-act="go" data-v="ativas"><strong>${late}</strong><span>com devolução em atraso</span></button>
+<button class="kpi${late?' alert':''}" data-act="go" data-v="ativas" data-f="atraso"><strong>${late}</strong><span>com devolução em atraso</span></button>
 </div>
 <div class="two">
 <section><div class="sec-h"><h2>Situação do material</h2>${D.tipos.length?`<button class="btn btn-sm" data-act="${ui.sitMin?'sitMax':'sitMin'}">${ui.sitMin?'Maximizar':'Minimizar'}</button>`:''}</div>
@@ -853,13 +854,16 @@ return `<div class="a-head"><div><h1>Solicitações</h1><p>Cada pedido avança d
 ${quadroCanc}<div class="cols">${col('pendente','Aguardando aprovação','Nenhum pedido novo.')}${col('aprovada','Aprovadas – separar','Nada para separar.')}${col('separada','Prontas – retirada','Ninguém aguardando retirada.')}</div>`;
 }
 function vAtivas(){
-const l=D.reservas.filter(r=>r.status==='cautelada').sort((a,b)=>a.devolucao.localeCompare(b.devolucao));
-return `<div class="a-head"><div><h1>Cautelas ativas</h1><p>Material fora da Furrielação, pela ordem de devolução prevista.</p></div></div>
+const so=ui.fAtivas==='atraso';
+const todas=D.reservas.filter(r=>r.status==='cautelada'),nAtr=todas.filter(atrasada).length;
+const l=(so?todas.filter(atrasada):todas).sort((a,b)=>a.devolucao.localeCompare(b.devolucao));
+return `<div class="a-head"><div><h1>${so?'Com devolução em atraso':'Cautelas ativas'}</h1><p>${so?'Somente as cautelas cuja devolução prevista já passou.':'Material fora da Furrielação, pela ordem de devolução prevista.'}</p></div>
+<div class="row" style="align-items:center"><button class="btn btn-sm${so?'':' btn-pri'}" data-act="go" data-v="ativas" aria-pressed="${!so}">Todas (${todas.length})</button><button class="btn btn-sm${so?' btn-pri':''}" data-act="go" data-v="ativas" data-f="atraso" aria-pressed="${so}">Em atraso (${nAtr})</button></div></div>
 ${l.length?`<div class="tbl-wrap"><table><thead><tr><th>Nº</th><th>Militar</th><th>Material</th><th>Patrimônios</th><th>Devolução</th><th>Situação</th><th></th></tr></thead><tbody>
 ${l.map(r=>`<tr class="hov" data-act="ver" data-id="${r.id}"><td class="mono">${nr(r.num)}</td><td>${esc(nomeM(r.userId))}${r.transferPara?`<br><span class="small c-brass">transferindo para ${esc(nomeM(r.transferPara))}</span>`:''}</td><td>${esc(itensTxt(r))}</td>
 <td class="mono">${(r.unidades||[]).map(id=>esc(unid(id)?.pat||'')).join(', ')}</td><td class="${atrasada(r)?'c-stamp':''}">${fmt(r.devolucao)}</td><td>${stamp(r)}</td>
 <td>${r.devAssCadete?'<span class="small c-ok">Militar assinou a devolução</span><br>':''}<button class="btn btn-sm btn-pri" data-act="devolver" data-id="${r.id}">${r.devAssCadete?'Conferir e assinar':'Registrar devolução'}</button></td></tr>`).join('')}</tbody></table></div>`
-:'<div class="empty">Todo o material está na Furrielação.</div>'}`;
+:`<div class="empty">${so?'Nenhuma cautela com devolução em atraso.':'Todo o material está na Furrielação.'}</div>`}`;
 }
 /* Ícones das categorias: desenhos simples em traço (sem imagens externas, sem uso do Firebase) */
 const ICO_CAT={
@@ -1964,7 +1968,7 @@ a.download='sicam-historico-'+new Date().toISOString().slice(0,10)+'.csv';docume
 }
 /* ============ Eventos ============ */
 const acts={
-go:el=>{ui.view=el.dataset.v;render();window.scrollTo(0,0);},
+go:el=>{ui.view=el.dataset.v;ui.fAtivas=el.dataset.f||'';render();window.scrollTo(0,0);},
 fechar:closeModal,
 recarregar:()=>location.reload(),
 sair:async()=>{closeModal();ui.view=null;ui.cart={};await signOut(auth);},
