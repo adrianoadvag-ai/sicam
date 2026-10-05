@@ -3,7 +3,7 @@ import { getAuth, initializeAuth, inMemoryPersistence, onAuthStateChanged, signI
 signOut, reauthenticateWithCredential, EmailAuthProvider, updatePassword, sendEmailVerification, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, writeBatch, runTransaction, query, where, limit, getCountFromServer } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import * as CFG from './config.js';
-const VERSAO='5.8.2';
+const VERSAO='5.9';
 const SICAM_FIREBASE=CFG.SICAM_FIREBASE;
 const DOMINIOS=((CFG.SICAM_OPCOES&&CFG.SICAM_OPCOES.dominios)||['pm.pr.gov.br']).map(d=>d.toLowerCase());
 /* ============ Estado ============ */
@@ -103,6 +103,8 @@ tr.cat-row td{background:var(--surface-2);font-weight:600;font-size:.82rem;color
 .unit .del svg{width:18px;height:18px;display:block}
 .unit .row{align-items:center;gap:.3rem}
 .versao-app{font-size:.72rem;opacity:.65;text-align:center;margin:.6rem 0 0}
+@media (min-width:821px){.sel-bar{position:sticky;top:.5rem;z-index:3;box-shadow:0 2px 10px rgba(0,0,0,.10)}}
+.units.sel .del{display:none}
 @media (min-width:821px){.side{overflow-y:auto;overflow-x:hidden}}
 @media (max-width:820px){.side .foot .versao-app{margin:0 .5rem;align-self:center;white-space:nowrap}}
 .unit input[type=checkbox]{width:1.1rem;height:1.1rem;margin-right:.4rem}
@@ -935,8 +937,8 @@ const nsu=su?Object.values(su).filter(Boolean).length:0;
 return `<details class="tipo" data-tipo="${t.id}" ${ui.aberto===t.id?'open':''}><summary><div><h3>${esc(t.nome)}${t.oculto?' <span class="tag c-muted">oculto aos cadetes</span>':''}</h3><p class="small muted">${esc(t.desc||'')}</p></div>
 <div class="row small"><span class="tag">${k.disponivel} disp.</span><span class="tag">${k.cautelado} caut.</span>${k.manutencao?`<span class="tag c-stamp">${k.manutencao} manut.</span>`:''}<span class="tag">${k.total} total</span></div></summary>
 <div class="body">${us===undefined||us===null?'<p class="small muted">Carregando unidades…</p>':''}
-${su?`<div class="sel-bar"><span class="grow">Marque as unidades que quer excluir. Unidades separadas ou cauteladas não podem ser excluídas.</span><button class="btn btn-sm" data-act="marcarUnid" data-id="${t.id}">Marcar todas (${livres.length})</button><button class="btn btn-sm btn-warn" data-act="excluirUnid" data-id="${t.id}" ${nsu?'':'disabled'}>Excluir ${nsu||''} unidade(s)</button><button class="btn btn-sm" data-act="selUnid" data-id="${t.id}">Cancelar</button></div>`:''}
-<div class="units">${(us||[]).map(u=>{const preso=['separado','cautelado'].includes(u.status);return `<div class="unit"><span class="mono">${su&&!preso?`<input type="checkbox" data-selu="${t.id}" value="${u.id}" ${su[u.id]?'checked':''} aria-label="Marcar ${esc(u.pat)}">`:''}<span class="dot" style="background:${(USTAT[u.status]||['','var(--muted)'])[1]}"></span>${patTxt(u)}</span>
+${su?`<div class="sel-bar"><span class="grow">Marque as unidades que quer excluir. Unidades separadas ou cauteladas não podem ser excluídas.</span>${livres.length&&nsu===livres.length?`<button class="btn btn-sm" data-act="desmarcarUnid" data-id="${t.id}">Desmarcar todas</button>`:`<button class="btn btn-sm btn-pri" data-act="marcarUnid" data-id="${t.id}">☑ Marcar todas (${livres.length})</button>`}<button class="btn btn-sm btn-warn" data-act="excluirUnid" data-id="${t.id}" ${nsu?'':'disabled'}>Excluir ${nsu||''} unidade(s)</button><button class="btn btn-sm" data-act="selUnid" data-id="${t.id}">Cancelar</button></div>`:''}
+<div class="units${su?' sel':''}">${(us||[]).map(u=>{const preso=['separado','cautelado'].includes(u.status);return `<div class="unit"><span class="mono">${su&&!preso?`<input type="checkbox" data-selu="${t.id}" value="${u.id}" ${su[u.id]?'checked':''} aria-label="Marcar ${esc(u.pat)}">`:''}<span class="dot" style="background:${(USTAT[u.status]||['','var(--muted)'])[1]}"></span>${patTxt(u)}</span>
 <span class="row" style="flex-wrap:nowrap">${preso?`<span class="small muted">${USTAT[u.status][0]}</span>`:
 `<select data-chg="ustat" data-id="${u.id}" aria-label="Situação de ${esc(u.pat)}">${['disponivel','manutencao','extraviado'].map(s=>`<option value="${s}" ${u.status===s?'selected':''}>${USTAT[s][0]}</option>`).join('')}</select><button class="del" data-act="delUnid" data-id="${u.id}" title="Excluir esta unidade" aria-label="Excluir ${esc(u.pat)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg></button>`}</span></div>`;}).join('')}</div>
 <div class="row" style="margin-top:.8rem"><button class="btn btn-sm" data-act="novaUnid" data-id="${t.id}">Adicionar unidade</button>${(us||[]).length&&!su?`<button class="btn btn-sm" data-act="selUnid" data-id="${t.id}">Selecionar unidades para excluir</button>`:''}<button class="btn btn-sm" data-act="editTipo" data-id="${t.id}">Editar material</button></div></div></details>`;};
@@ -2073,6 +2075,7 @@ matCat:el=>{ui.matCat=el.dataset.c||null;ui.selModo=false;ui.selTipos={};ui.selU
 marcarTodos:()=>{D.tipos.filter(t=>catOf(t)===ui.matCat).forEach(t=>ui.selTipos[t.id]=true);render();},
 desmarcarTodos:()=>{ui.selTipos={};render();},
 selUnid:el=>{const t=el.dataset.id;ui.aberto=t;if(ui.selU[t])delete ui.selU[t];else ui.selU[t]={};render();},
+desmarcarUnid:el=>{const t=el.dataset.id;ui.aberto=t;ui.selU[t]={};render();},
 marcarUnid:el=>{const t=el.dataset.id;ui.aberto=t;ui.selU[t]={};(ui.unidTipo[t]||[]).filter(u=>!['separado','cautelado'].includes(u.status)).forEach(u=>ui.selU[t][u.id]=true);render();},
 excluirUnid:el=>{const t=el.dataset.id,ids=Object.keys(ui.selU[t]||{}).filter(k=>ui.selU[t][k]);if(!ids.length)return;if(!confirm(`Excluir ${ids.length} unidade(s) de ${tipo(t).nome}? Isso não pode ser desfeito.`))return;ui.aberto=t;excluirUnidades(t,ids,el);},
 delUnid:el=>{const u=unid(el.dataset.id);if(!u)return;if(!confirm(`Excluir a unidade ${u.pat} de ${tipo(u.tipoId).nome}?`))return;ui.aberto=u.tipoId;excluirUnidades(u.tipoId,[u.id]);},
