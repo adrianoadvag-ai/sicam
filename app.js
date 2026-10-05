@@ -1571,10 +1571,21 @@ if(m.nome==null&&m.desc!=null){m.nome=m.desc;delete m.desc;} // só há "Descri�
 if(m.nome==null&&m.modelo!=null){m.nome=m.modelo;delete m.modelo;}
 return m;
 }
+/* Corrige acentuação corrompida (texto UTF-8 lido como Latin-1/Windows-1252, ex.: "ComunicaÃ§Ã£o" -> "Comunicação") */
+function consertaTexto(s){
+if(typeof s!=='string'||!/[\u00C2-\u00F4]/.test(s))return s;
+const inv={'€':128,'‚':130,'ƒ':131,'„':132,'…':133,'†':134,'‡':135,'ˆ':136,'‰':137,'Š':138,'‹':139,'Œ':140,'Ž':142,'‘':145,'’':146,'“':147,'”':148,'•':149,'–':150,'—':151,'˜':152,'™':153,'š':154,'›':155,'œ':156,'ž':158,'Ÿ':159};
+return s.replace(/[\u00C2-\u00F4][\u0080-\u00BF€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ]+/g,m=>{
+try{return new TextDecoder('utf-8',{fatal:true}).decode(Uint8Array.from([...m].map(c=>inv[c]??c.charCodeAt(0))));}catch(e){return m;}
+});
+}
 async function lerPlanilhaBruta(file){
-const X=await carregarXLSX();const wb=X.read(await file.arrayBuffer(),{type:'array'});const abas=[];
+const X=await carregarXLSX();const buf=await file.arrayBuffer();let wb;
+if(/\.(csv|txt)$/i.test(file.name||'')){let txt;try{txt=new TextDecoder('utf-8',{fatal:true}).decode(buf);}catch(e){txt=new TextDecoder('windows-1252').decode(buf);}wb=X.read(txt.replace(/^\uFEFF/,''),{type:'string'});}
+else wb=X.read(buf,{type:'array'});
+const abas=[];
 for(const nomeAba of wb.SheetNames){
-const rows=X.utils.sheet_to_json(wb.Sheets[nomeAba],{header:1,defval:'',raw:false}).map(r=>r.map(c=>String(c==null?'':c).trim()));
+const rows=X.utils.sheet_to_json(wb.Sheets[nomeAba],{header:1,defval:'',raw:false}).map(r=>r.map(c=>consertaTexto(String(c==null?'':c)).trim()));
 if(!rows.some(r=>r.some(Boolean)))continue;
 let hi=0,melhor=-1;
 for(let i=0;i<Math.min(rows.length,15);i++){const m=autoMapa(rows[i]);const pts=Object.keys(m).length+(m.nome!=null?2:0);if(pts>melhor){melhor=pts;hi=i;}}
