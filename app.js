@@ -3,7 +3,7 @@ import { getAuth, initializeAuth, inMemoryPersistence, onAuthStateChanged, signI
 signOut, reauthenticateWithCredential, EmailAuthProvider, updatePassword, sendEmailVerification, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, writeBatch, runTransaction, query, where, limit, getCountFromServer } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import * as CFG from './config.js';
-const VERSAO='5.8.1';
+const VERSAO='5.8.2';
 const SICAM_FIREBASE=CFG.SICAM_FIREBASE;
 const DOMINIOS=((CFG.SICAM_OPCOES&&CFG.SICAM_OPCOES.dominios)||['pm.pr.gov.br']).map(d=>d.toLowerCase());
 /* ============ Estado ============ */
@@ -103,7 +103,7 @@ tr.cat-row td{background:var(--surface-2);font-weight:600;font-size:.82rem;color
 .unit .del svg{width:18px;height:18px;display:block}
 .unit .row{align-items:center;gap:.3rem}
 .versao-app{font-size:.72rem;opacity:.65;text-align:center;margin:.6rem 0 0}
-@media (min-width:821px){.side{overflow-y:auto}}
+@media (min-width:821px){.side{overflow-y:auto;overflow-x:hidden}}
 @media (max-width:820px){.side .foot .versao-app{margin:0 .5rem;align-self:center;white-space:nowrap}}
 .unit input[type=checkbox]{width:1.1rem;height:1.1rem;margin-right:.4rem}
 .perigo{border:1px solid var(--stamp);border-radius:10px;padding:.8rem;margin-top:1.6rem}
