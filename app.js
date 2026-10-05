@@ -3,7 +3,7 @@ import { getAuth, initializeAuth, inMemoryPersistence, onAuthStateChanged, signI
 signOut, reauthenticateWithCredential, EmailAuthProvider, updatePassword, sendEmailVerification, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, writeBatch, runTransaction, query, where, limit, getCountFromServer } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import * as CFG from './config.js';
-const VERSAO='5.9';
+const VERSAO='5.9.1';
 const SICAM_FIREBASE=CFG.SICAM_FIREBASE;
 const DOMINIOS=((CFG.SICAM_OPCOES&&CFG.SICAM_OPCOES.dominios)||['pm.pr.gov.br']).map(d=>d.toLowerCase());
 /* ============ Estado ============ */
@@ -1965,7 +1965,7 @@ const nova=()=>{pg=pdf.addPage([W,H]);y=H-M;};
 const quebra=(t,f,s,w)=>{const out=[];for(const par of winAnsi(t).split('\n')){let l='';for(const pal of par.split(' ')){const tt=l?l+' '+pal:pal;if(l&&f.widthOfTextAtSize(tt,s)>w){out.push(l);l=pal;}else l=tt;}out.push(l);}return out;};
 const cabe=h=>{if(y-h<M+24)nova();};
 const texto=(t,o={})=>{const f=o.f||F1,s=o.s||9,x=o.x||M,w=o.w||(W-2*M),c=o.c||preto;for(const l of quebra(t,f,s,w)){cabe(s*1.35);pg.drawText(l,{x,y:y-s,size:s,font:f,color:c});y-=s*1.35;}};
-const kv=(k,v)=>{if(!v)return;const kw=150,ls=quebra(v,F1,9,W-2*M-kw);cabe(12*ls.length);pg.drawText(winAnsi(k),{x:M,y:y-9,size:8.5,font:F2,color:cinza});ls.forEach((l,i)=>pg.drawText(l,{x:M+kw,y:y-9-i*12,size:9,font:F1,color:preto}));y-=12*ls.length+1;};
+const kv=(k,v)=>{if(!v)return;const kw=150,ks=quebra(k,F2,8.5,kw-10),ls=quebra(v,F1,9,W-2*M-kw),alt=Math.max(12*ls.length,11*ks.length);cabe(alt);ks.forEach((l,i)=>pg.drawText(l,{x:M,y:y-9-i*11,size:8.5,font:F2,color:cinza}));ls.forEach((l,i)=>pg.drawText(l,{x:M+kw,y:y-9-i*12,size:9,font:F1,color:preto}));y-=alt+1;};
 nova();
 pg.drawRectangle({x:0,y:H-78,width:W,height:78,color:verde});
 pg.drawText('SICAM',{x:M,y:H-40,size:22,font:F2,color:P.rgb(1,1,1)});
