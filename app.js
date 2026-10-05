@@ -3,6 +3,7 @@ import { getAuth, initializeAuth, inMemoryPersistence, onAuthStateChanged, signI
 signOut, reauthenticateWithCredential, EmailAuthProvider, updatePassword, sendEmailVerification, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, writeBatch, runTransaction, query, where, limit, getCountFromServer } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import * as CFG from './config.js';
+const VERSAO='5.8';
 const SICAM_FIREBASE=CFG.SICAM_FIREBASE;
 const DOMINIOS=((CFG.SICAM_OPCOES&&CFG.SICAM_OPCOES.dominios)||['pm.pr.gov.br']).map(d=>d.toLowerCase());
 /* ============ Estado ============ */
@@ -96,7 +97,12 @@ tr.cat-row td{background:var(--surface-2);font-weight:600;font-size:.82rem;color
 .cat-card .bar{width:100%;margin-top:.3rem}
 .sel-bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;border:1px dashed var(--line);border-radius:10px;padding:.6rem .75rem;margin:.6rem 0 .9rem;background:var(--surface-2)}
 .sel-bar .grow{flex:1;min-width:10rem;font-size:.88rem}
-.unit .del{border:0;background:none;color:var(--stamp);cursor:pointer;font-size:1rem;padding:0 .2rem}
+.units{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+.unit .del{border:0;background:none;color:var(--stamp);cursor:pointer;padding:0;margin:0;width:30px;height:30px;flex:0 0 30px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px}
+.unit .del:hover{background:var(--surface)}
+.unit .del svg{width:18px;height:18px;display:block}
+.unit .row{align-items:center;gap:.3rem}
+.versao-app{font-size:.72rem;opacity:.65;text-align:center;margin:.6rem 0 0}
 .unit input[type=checkbox]{width:1.1rem;height:1.1rem;margin-right:.4rem}
 .perigo{border:1px solid var(--stamp);border-radius:10px;padding:.8rem;margin-top:1.6rem}
 .perigo summary{color:var(--stamp);cursor:pointer;font-weight:600}
@@ -374,14 +380,14 @@ return `<main class="login"><div class="login-card stack">
 <p class="erro" id="ver-erro"></p>
 <button class="btn btn-pri btn-block" data-act="jaConfirmei">Já confirmei</button>
 <button class="btn btn-block" data-act="reenviar">Reenviar o e-mail</button>
-<button class="btn btn-block" data-act="sair">Sair</button></div></main>`;
+<button class="btn btn-block" data-act="sair">Sair</button><p class="versao-app">SICAM v${VERSAO}</p></div></main>`;
 }
 function vAguardando(){
 return `<main class="login"><div class="login-card stack">
 <div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Cadastro recebido</p></div></div>
 <p>Seu e-mail foi confirmado. Agora a Furrielação precisa liberar seu acesso.</p>
 <p class="muted small">Esta tela atualiza sozinha assim que o acesso for liberado.</p>
-<button class="btn btn-block" data-act="sair">Sair</button></div></main>`;
+<button class="btn btn-block" data-act="sair">Sair</button><p class="versao-app">SICAM v${VERSAO}</p></div></main>`;
 }
 /* ============ App do solicitante ============ */
 function vApp(){
@@ -733,7 +739,7 @@ return `<div class="shell"><nav class="side" aria-label="Menu do Furriel">
 ${NAV.map(([k,l])=>`<button class="nav-b" data-act="go" data-v="${k}" ${v===k?'aria-current="page"':''}><span>${l}</span>${k==='solic'&&pend?`<span class="badge">${pend}</span>`:''}${k==='solic'&&ncanc?`<span class="badge red" title="Canceladas pelo militar">${ncanc}</span>`:''}${k==='ativas'&&nativ?`<span class="badge" title="Cautelas ativas">${nativ}</span>`:''}${k==='ativas'&&late?`<span class="badge red" title="Com devolução em atraso">${late}</span>`:''}${k==='militares'&&upend?`<span class="badge">${upend}</span>`:''}</button>`).join('')}
 <div class="foot"><div class="who">${esc(nomeM(sess.userId))}</div>
 ${bioOk&&!temBioAqui()?'<button class="nav-b" data-act="ativarBio">Ativar digital / Face ID</button>':''}${seletorBloqueio()}${seletorTema()}<button class="nav-b" data-act="senha">Trocar senha</button>
-<button class="nav-b" data-act="sair">Sair</button></div>
+<button class="nav-b" data-act="sair">Sair</button><p class="versao-app">SICAM v${VERSAO}</p></div>
 </nav><main class="a-main">${views[v]()}</main></div>`;
 }
 function acoesAdmin(r,inModal){
@@ -824,7 +830,7 @@ function vPainel(){
 const Rs=D.reservas, c=s=>Rs.filter(r=>r.status===s).length;
 const late=Rs.filter(atrasada).length;
 const feed=Rs.flatMap(r=>(r.log||[]).map(l=>({...l,r}))).sort((a,b)=>b.t.localeCompare(a.t)).slice(0,8);
-return `<div class="a-head"><div><h1>Painel</h1><p>${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</p></div><div class="row" style="align-items:center"><button class="btn btn-pri" data-act="plantao">📋 Relatório do plantão</button><div style="min-width:200px">${botaoAvisos()}</div></div></div>
+return `<div class="a-head"><div><h1>Painel</h1><p>${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</p></div><div class="row" style="align-items:center"><button class="btn btn-pri" data-act="plantao">📋 Relatório do plantão</button><button class="btn" data-act="backup" title="Baixar cópia de segurança de todos os dados">💾 Exportar backup</button><div style="min-width:200px">${botaoAvisos()}</div></div></div>
 ${D.reservas.some(r=>canceladaPeloMilitar(r)&&!r.cienteFurriel)?`<div class="aviso-cautelas"><span><b>${D.reservas.filter(r=>canceladaPeloMilitar(r)&&!r.cienteFurriel).length} solicitação(ões) cancelada(s) pelo militar</b> aguardando sua ciência.</span><button class="btn btn-sm btn-pri" data-act="go" data-v="solic">Ver</button></div>`:''}<div class="kpis">
 <button class="kpi" data-act="go" data-v="solic"><strong>${c('pendente')}</strong><span>aguardando aprovação</span></button>
 <button class="kpi" data-act="go" data-v="solic"><strong>${c('aprovada')+c('separada')}</strong><span>a separar ou retirar</span></button>
@@ -930,7 +936,7 @@ return `<details class="tipo" data-tipo="${t.id}" ${ui.aberto===t.id?'open':''}>
 ${su?`<div class="sel-bar"><span class="grow">Marque as unidades que quer excluir. Unidades separadas ou cauteladas não podem ser excluídas.</span><button class="btn btn-sm" data-act="marcarUnid" data-id="${t.id}">Marcar todas (${livres.length})</button><button class="btn btn-sm btn-warn" data-act="excluirUnid" data-id="${t.id}" ${nsu?'':'disabled'}>Excluir ${nsu||''} unidade(s)</button><button class="btn btn-sm" data-act="selUnid" data-id="${t.id}">Cancelar</button></div>`:''}
 <div class="units">${(us||[]).map(u=>{const preso=['separado','cautelado'].includes(u.status);return `<div class="unit"><span class="mono">${su&&!preso?`<input type="checkbox" data-selu="${t.id}" value="${u.id}" ${su[u.id]?'checked':''} aria-label="Marcar ${esc(u.pat)}">`:''}<span class="dot" style="background:${(USTAT[u.status]||['','var(--muted)'])[1]}"></span>${patTxt(u)}</span>
 <span class="row" style="flex-wrap:nowrap">${preso?`<span class="small muted">${USTAT[u.status][0]}</span>`:
-`<select data-chg="ustat" data-id="${u.id}" aria-label="Situação de ${esc(u.pat)}">${['disponivel','manutencao','extraviado'].map(s=>`<option value="${s}" ${u.status===s?'selected':''}>${USTAT[s][0]}</option>`).join('')}</select><button class="del" data-act="delUnid" data-id="${u.id}" title="Excluir esta unidade" aria-label="Excluir ${esc(u.pat)}">🗑</button>`}</span></div>`;}).join('')}</div>
+`<select data-chg="ustat" data-id="${u.id}" aria-label="Situação de ${esc(u.pat)}">${['disponivel','manutencao','extraviado'].map(s=>`<option value="${s}" ${u.status===s?'selected':''}>${USTAT[s][0]}</option>`).join('')}</select><button class="del" data-act="delUnid" data-id="${u.id}" title="Excluir esta unidade" aria-label="Excluir ${esc(u.pat)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg></button>`}</span></div>`;}).join('')}</div>
 <div class="row" style="margin-top:.8rem"><button class="btn btn-sm" data-act="novaUnid" data-id="${t.id}">Adicionar unidade</button>${(us||[]).length&&!su?`<button class="btn btn-sm" data-act="selUnid" data-id="${t.id}">Selecionar unidades para excluir</button>`:''}<button class="btn btn-sm" data-act="editTipo" data-id="${t.id}">Editar material</button></div></div></details>`;};
 const head=`<div class="a-head"><div><h1>Material</h1><p>${D.tipos.length} tipos e ${contagemPronta?totU:'…'} unidades em ${cats.length} categoria(s).</p></div>
 <div class="row"><button class="btn" data-act="importar">Importar planilha</button><button class="btn" data-act="novoMun">Cadastrar munição</button><button class="btn btn-pri" data-act="novoTipo">Cadastrar material</button></div></div>`;
@@ -1764,6 +1770,22 @@ const CAMPOS=[['num','Nº'],['militar','Militar'],['numAluno','Nº de aluno'],['
 ['codAss','Código da assinatura'],['cautelada','Cautelada (entrega) em'],['cauteladaPor','Entrega confirmada por'],['transfEntrada','Recebida por transferência'],
 ['transfSaida','Transferida a outro militar'],['transfPendente','Transferência pendente'],['entregaAss','Entrega assinada pelo Furriel'],['devCadete','Devolução assinada pelo militar'],['devolvida','Devolvida em'],['devolvidaPor','Devolução recebida por'],['devFurriel','Devolução conferida e assinada pelo Furriel'],
 ['obsDev','Observação da devolução'],['encerramento','Recusa / cancelamento'],['obs','Observação do pedido']];
+/* ===== Backup completo dos dados (somente leitura) ===== */
+async function exportarBackup(){
+if(!confirm('Gerar o backup completo dos dados do SICAM?\n\nO arquivo contém nomes e e-mails dos militares e todo o histórico de cautelas. Guarde-o em local seguro (ex.: pasta institucional) e não o compartilhe.'))return;
+toast('Gerando backup… aguarde, pode levar alguns segundos.');
+try{
+const cols=['tipos','unidades','lotes','reservas','users','historico'];
+const dados={};let total=0;
+for(const c of cols){const s=await getDocs(collection(db,c));dados[c]={};s.forEach(d=>{dados[c][d.id]=d.data();});total+=s.size;}
+try{const cs=await getDoc(doc(db,'config','contador'));if(cs.exists())dados.config={contador:cs.data()};}catch(e){}
+const a=new Date(),p=n=>String(n).padStart(2,'0');
+const carimbo=a.getFullYear()+'-'+p(a.getMonth()+1)+'-'+p(a.getDate())+'_'+p(a.getHours())+'h'+p(a.getMinutes());
+const bk={sistema:'SICAM – Sistema Integrado de Cautela de Armamento e Munição',versao:VERSAO,geradoEm:a.toISOString(),geradoPorUid:(sess&&sess.userId)||'',totalRegistros:total,colecoes:dados};
+baixarArquivo(new Blob([JSON.stringify(bk)],{type:'application/json'}),'SICAM-backup-'+carimbo+'.json');
+toast('Backup gerado: '+total+' registros.');
+}catch(e){console.error(e);toast('Não foi possível gerar o backup: '+(e.code||e.message),true);}
+}
 function baixarArquivo(blob,nome){
 const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=nome;document.body.appendChild(a);a.click();
 setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},4000);
@@ -2065,6 +2087,7 @@ sitMin:()=>{ui.sitMin=true;try{localStorage.setItem('sicam.sitMin','1');}catch(e
 sitMax:()=>{ui.sitMin=false;try{localStorage.setItem('sicam.sitMin','0');}catch(e){}render();},
 matDet:el=>materialDetalhe(el.dataset.id),
 plantao:()=>abrirPlantao(),
+backup:()=>exportarBackup(),
 cancelarF:el=>cancelarPeloFurriel(el.dataset.id),
 desbloquear:()=>desbloquear(),
 tema:el=>{temaAtual=el.dataset.tema;try{localStorage.setItem('sicam.tema',temaAtual);}catch(e){}aplicarTema(temaAtual);render();},
