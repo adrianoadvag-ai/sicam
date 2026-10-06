@@ -3,7 +3,7 @@ import { getAuth, initializeAuth, inMemoryPersistence, onAuthStateChanged, signI
 signOut, reauthenticateWithCredential, EmailAuthProvider, updatePassword, sendEmailVerification, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, writeBatch, runTransaction, query, where, limit, getCountFromServer } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import * as CFG from './config.js';
-const VERSAO='5.10';
+const VERSAO='5.10.1';
 const SICAM_FIREBASE=CFG.SICAM_FIREBASE;
 const DOMINIOS=((CFG.SICAM_OPCOES&&CFG.SICAM_OPCOES.dominios)||['pm.pr.gov.br']).map(d=>d.toLowerCase());
 /* ============ Estado ============ */
@@ -1814,15 +1814,17 @@ let ini=null;try{const f=localStorage.getItem('sicam.fimPlantao');if(f&&Date.now
 if(!ini)ini=new Date(Date.now()-24*3600e3);
 openModal('Relatório do plantão',`<form id="f-plantao" class="stack" autocomplete="off">
 <p class="small muted">Relação do que foi cautelado, devolvido e transferido no seu turno, e do que fica pendente para quem assume o serviço.</p>
-<div class="grid2"><label class="f"><span>Início do plantão</span><input class="i" type="datetime-local" name="ini" value="${toLocalDT(ini)}" required></label>
-<label class="f"><span>Fim do plantão</span><input class="i" type="datetime-local" name="fim" value="${toLocalDT(new Date())}" required></label></div>
+<p class="small" style="margin:0"><b>Início do plantão</b> – dia e hora em que você assumiu o serviço</p>
+<div class="grid2"><label class="f"><span>Data</span><input class="i" type="date" name="iniD" value="${toLocalDT(ini).slice(0,10)}" required></label><label class="f"><span>Hora</span><input class="i" type="time" name="iniH" value="${toLocalDT(ini).slice(11,16)}" required></label></div>
+<p class="small" style="margin:0"><b>Fim do plantão</b></p>
+<div class="grid2"><label class="f"><span>Data</span><input class="i" type="date" name="fimD" value="${toLocalDT(new Date()).slice(0,10)}" required></label><label class="f"><span>Hora</span><input class="i" type="time" name="fimH" value="${toLocalDT(new Date()).slice(11,16)}" required></label></div>
 <label class="check"><input type="checkbox" name="meus" checked><span>Só as entregas e devoluções registradas por mim (${esc(nomeM(sess.userId))})</span></label>
 <p class="erro" id="pl-erro"></p>
 <div class="row"><button class="btn" name="acao" value="previa">Ver na tela</button><button class="btn" name="acao" value="xls">Baixar Excel</button><button class="btn btn-pri" name="acao" value="pdf">Gerar PDF</button></div>
 <div id="pl-prev"></div></form>`,'','Final do turno');
 }
 async function dadosPlantao(fd){
-const ini=new Date(fd.get('ini')),fim=new Date(new Date(fd.get('fim')).getTime()+59999),meus=!!fd.get('meus'); // inclui o minuto final inteiro
+const ini=new Date(fd.get('iniD')+'T'+fd.get('iniH')),fim=new Date(new Date(fd.get('fimD')+'T'+fd.get('fimH')).getTime()+59999),meus=!!fd.get('meus'); // inclui o minuto final inteiro
 if(!(fim>ini))throw {msg:'O fim precisa ser depois do início.'};
 const dias=Math.ceil((Date.now()-ini)/864e5)+1;
 if(dias>JANELA_DIAS&&!histTudo&&histDias<dias)await carregarHistoricoCompleto(null,Math.max(dias,30));
