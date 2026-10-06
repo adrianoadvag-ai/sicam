@@ -3,7 +3,7 @@ import { getAuth, initializeAuth, inMemoryPersistence, onAuthStateChanged, signI
 signOut, reauthenticateWithCredential, EmailAuthProvider, updatePassword, sendEmailVerification, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, writeBatch, runTransaction, query, where, limit, getCountFromServer } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import * as CFG from './config.js';
-const VERSAO='5.9.1';
+const VERSAO='5.10';
 const SICAM_FIREBASE=CFG.SICAM_FIREBASE;
 const DOMINIOS=((CFG.SICAM_OPCOES&&CFG.SICAM_OPCOES.dominios)||['pm.pr.gov.br']).map(d=>d.toLowerCase());
 /* ============ Estado ============ */
@@ -1733,6 +1733,11 @@ for(let k=1;k<=q;k++)b.set(doc(db,'unidades',id+'_'+k),{tipoId:id,pat:pre+'-'+St
 await b.commit();
 }
 /* ============ Relatórios (PDF e Excel) ============ */
+/* Brasão da APMG no cabeçalho dos PDFs (se a imagem falhar, o relatório sai sem ele) */
+let brasaoBytes=null;
+async function brasaoPDF(pdf){try{if(!brasaoBytes){const r=await fetch('brasao-apmg.png');if(!r.ok)throw new Error('brasão');brasaoBytes=await r.arrayBuffer();}return await pdf.embedPng(brasaoBytes);}catch(e){console.warn('brasão no PDF',e);return null;}}
+function desenhaBrasao(pg,P,img,M,cy,h){const w=h*img.width/img.height,cx=M+h/2+2;pg.drawCircle({x:cx,y:cy,size:h/2+5,color:P.rgb(1,1,1)});pg.drawImage(img,{x:cx-w/2,y:cy-h/2,width:w,height:h});return cx+h/2+16;}
+
 const fmtC=iso=>{if(!iso)return '';const d=new Date(iso);if(isNaN(d))return '';return d.toLocaleDateString('pt-BR')+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});};
 const logDe=(r,a)=>(r.log||[]).filter(l=>l.a===a).slice(-1)[0];
 const quando=(r,a)=>{const l=logDe(r,a);return l?fmtC(l.t):'';};
@@ -1875,7 +1880,7 @@ const cabe=h=>{if(y-h<M+24)nova();};
 const texto=(t,o={})=>{const f=o.f||F1,s=o.s||9,x=o.x||M,w=o.w||(W-2*M),c=o.c||preto;for(const l of quebra(t,f,s,w)){cabe(s*1.35);pg.drawText(l,{x,y:y-s,size:s,font:f,color:c});y-=s*1.35;}};
 const secao=t=>{cabe(40);y-=8;pg.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:1,color:verde});y-=5;texto(t,{f:F2,s:11});y-=2;};
 nova();pg.drawRectangle({x:0,y:H-70,width:W,height:70,color:verde});
-pg.drawText('SICAM',{x:M,y:H-36,size:20,font:F2,color:P.rgb(1,1,1)});pg.drawText(winAnsi('Sistema Integrado de Cautela de Armamento e Munição – Furrielação APMG'),{x:M,y:H-54,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
+const _br=await brasaoPDF(pdf),_tx=_br?desenhaBrasao(pg,P,_br,M,H-35,52):M;pg.drawText('SICAM',{x:_tx,y:H-36,size:20,font:F2,color:P.rgb(1,1,1)});pg.drawText(winAnsi('Sistema Integrado de Cautela de Armamento e Munição – Furrielação APMG'),{x:_tx,y:H-54,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
 y=H-88;texto('Relatório do plantão',{f:F2,s:14});y-=2;texto(`Período: ${periodo}`,{f:F2,s:10});texto(`Furriel: ${nomeM(sess.userId)}${d.meus?' (somente registros feitos por ele)':''}`,{s:9.5});texto(`Gerado em ${fmtC(nowISO())}`,{s:8.5,c:cinza});
 y-=4;texto(d.grupos.map(g=>`${g}: ${d.ev.filter(x=>x.tipo===g).length}`).join('   ·   ')+`   ·   Cautelas ativas no fim: ${d.ativas.length}`,{s:9,c:cinza});
 for(const g of d.grupos){const l=d.ev.filter(x=>x.tipo===g);if(!l.length)continue;secao(`${g} (${l.length})`);
@@ -1968,8 +1973,8 @@ const texto=(t,o={})=>{const f=o.f||F1,s=o.s||9,x=o.x||M,w=o.w||(W-2*M),c=o.c||p
 const kv=(k,v)=>{if(!v)return;const kw=150,ks=quebra(k,F2,8.5,kw-10),ls=quebra(v,F1,9,W-2*M-kw),alt=Math.max(12*ls.length,11*ks.length);cabe(alt);ks.forEach((l,i)=>pg.drawText(l,{x:M,y:y-9-i*11,size:8.5,font:F2,color:cinza}));ls.forEach((l,i)=>pg.drawText(l,{x:M+kw,y:y-9-i*12,size:9,font:F1,color:preto}));y-=alt+1;};
 nova();
 pg.drawRectangle({x:0,y:H-78,width:W,height:78,color:verde});
-pg.drawText('SICAM',{x:M,y:H-40,size:22,font:F2,color:P.rgb(1,1,1)});
-pg.drawText(winAnsi('Sistema Integrado de Cautela de Armamento e Munição – Furrielação APMG'),{x:M,y:H-58,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
+const _br=await brasaoPDF(pdf),_tx=_br?desenhaBrasao(pg,P,_br,M,H-39,58):M;pg.drawText('SICAM',{x:_tx,y:H-40,size:22,font:F2,color:P.rgb(1,1,1)});
+pg.drawText(winAnsi('Sistema Integrado de Cautela de Armamento e Munição – Furrielação APMG'),{x:_tx,y:H-58,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
 y=H-96;
 texto(titulo,{f:F2,s:14});y-=2;
 texto(`Gerado em ${fmtC(nowISO())} por ${nomeM(sess.userId)} · ${lista.length} cautela(s)`,{s:9,c:cinza});y-=8;
