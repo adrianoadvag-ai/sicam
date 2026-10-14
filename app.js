@@ -3,7 +3,7 @@ import { getAuth, initializeAuth, inMemoryPersistence, onAuthStateChanged, signI
 signOut, reauthenticateWithCredential, EmailAuthProvider, updatePassword, sendEmailVerification, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, writeBatch, runTransaction, query, where, limit, getCountFromServer } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import * as CFG from './config.js';
-const VERSAO='5.10.1';
+const VERSAO='5.11.0';
 const SICAM_FIREBASE=CFG.SICAM_FIREBASE;
 const DOMINIOS=((CFG.SICAM_OPCOES&&CFG.SICAM_OPCOES.dominios)||['pm.pr.gov.br']).map(d=>d.toLowerCase());
 /* ============ Estado ============ */
@@ -167,6 +167,20 @@ tr.cat-row td{background:var(--surface-2);font-weight:600;font-size:.82rem;color
 .side .brand h1{cursor:default}
 .login .brand{flex-direction:column;text-align:center;gap:.7rem}.login .brasoes{gap:.9rem}.login .brasoes img{height:92px}
 @media (max-width:380px){.login .brasoes img{height:74px}.brand h1{font-size:2rem}}
+/* ===== v5.11: fila por horário de retirada e cautela no balcão ===== */
+.card.card-prox{border-left:4px solid var(--gold)}.card.card-late{border-left:4px solid var(--stamp)}
+.tag-prox{background:color-mix(in srgb,var(--gold) 22%,var(--surface));border-color:var(--brass);color:var(--ink);font-weight:600}
+.tag-balcao{background:color-mix(in srgb,var(--blue) 14%,var(--surface));border-color:var(--blue);color:var(--ink);font-weight:600}
+.bal-lista{list-style:none;padding:0;margin:.3rem 0 0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.bal-lista li{display:flex;align-items:center;gap:.5rem;padding:.5rem .65rem;border-bottom:1px solid var(--line);background:var(--surface)}
+.bal-lista li:last-child{border-bottom:0}.bal-lista .nm{flex:1}
+.bal-add{display:grid;grid-template-columns:1fr 90px auto;gap:.5rem;align-items:end}
+@media (max-width:480px){.bal-add{grid-template-columns:1fr 80px}.bal-add .btn{grid-column:1/-1}}
+.bal-conf{border:1px solid var(--brass);border-radius:8px;padding:.5rem .65rem;margin-top:.4rem;font-size:.85rem;background:color-mix(in srgb,var(--gold) 10%,var(--surface))}
+.bal-conf ul{margin:.3rem 0 0;padding-left:1.1rem}
+.bal-opc{display:grid;gap:.6rem;margin-top:.8rem}
+.bal-opc .btn{text-align:left;justify-content:flex-start;white-space:normal;line-height:1.3;padding:.75rem .9rem}
+.bal-opc .btn small{display:block;font-weight:400;opacity:.85;margin-top:.15rem}
 `;document.head.appendChild(st);})();
 
 /* ============ Utilidades ============ */
@@ -205,6 +219,7 @@ const unid=id=>D.unidades.find(u=>u.id===id)||cacheU.get(id)||uinfoDe(id);
 const me=()=>sess&&D.users.find(u=>u.id===sess.userId);
 const atrasada=r=>r.status==='cautelada'&&new Date(r.devolucao)<new Date();
 const entrada=(a,obs)=>({t:nowISO(),a,por:sess.userId,obs:obs||''});
+const ANTEC_MAX_DIAS=7; // antecedência máxima para agendar a retirada pelo app
 const MAXQ=10; // limite por item no pedido do cadete: não depende do estoque, para não revelar quantidades
 const ehFurriel=()=>{const u=me();return !!u&&u.perfil==='furriel';};
 const isMun=id=>tipo(id).mun===true;
@@ -292,18 +307,18 @@ modal.addEventListener('click',e=>{if(e.target===modal)closeModal();});
 /* ============ Telas de entrada ============ */
 function vNaoConfig(){
 return `<main class="login"><div class="login-card stack">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Falta ligar o app ao Firebase</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Materiais</p><p>Falta ligar o app ao Firebase</p></div></div>
 <p>Abra o arquivo <b>config.js</b> e cole ali os dados do seu projeto Firebase, como está no guia de instalação.</p></div></main>`;
 }
 function vErro(){
 return `<main class="login"><div class="login-card stack">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Não foi possível conectar</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Materiais</p><p>Não foi possível conectar</p></div></div>
 <p class="erro">${esc(erroMsg)}</p><button class="btn btn-pri btn-block" data-act="recarregar">Tentar de novo</button></div></main>`;
 }
 function vCarregando(){return `<div class="loading"><div><div class="spin"></div>Carregando…</div></div>`;}
 function vSetup(){
 return `<main class="login"><div class="login-card">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Configuração inicial – crie a conta do Furriel</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Materiais</p><p>Configuração inicial – crie a conta do Furriel</p></div></div>
 <form id="f-setup" class="stack" autocomplete="off">
 <p class="aviso">Esta tela só aparece uma vez. A primeira conta criada aqui será a do Furriel, que depois cadastra os demais militares.</p>
 <div class="grid2"><label class="f"><span>Posto / graduação</span><input class="i" name="grad" value="Cad PM"></label>
@@ -317,7 +332,7 @@ return `<main class="login"><div class="login-card">
 }
 function vLogin(){
 return `<main class="login"><div class="login-card">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Furrielação · APMG</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Materiais</p><p>Furrielação · APMG</p></div></div>
 <form id="f-login" class="stack" autocomplete="on">
 <label class="f"><span>E-mail institucional</span><input class="i" name="login" required autocapitalize="off" autocomplete="username" inputmode="email"></label>
 <label class="f"><span>Senha</span><input class="i" name="senha" type="password" required autocomplete="current-password"></label>
@@ -331,7 +346,7 @@ return `<main class="login"><div class="login-card">
 }
 function vLoginFurriel(){
 return `<main class="login restrito"><div class="login-card">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Painel da Furrielação</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Materiais</p><p>Painel da Furrielação</p></div></div>
 <p style="margin:-.4rem 0 1rem"><span class="stamp c-stamp">Acesso restrito</span></p>
 <form id="f-login" class="stack" autocomplete="on" data-tela="furriel">
 <label class="f"><span>E-mail</span><input class="i" name="login" required autocapitalize="off" autocomplete="username" inputmode="email"></label>
@@ -345,7 +360,7 @@ return `<main class="login restrito"><div class="login-card">
 }
 function vCadastroF(){
 return `<main class="login restrito"><div class="login-card">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Solicitar conta de Furriel</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Materiais</p><p>Solicitar conta de Furriel</p></div></div>
 <form id="f-cadf" class="stack" autocomplete="off">
 <p class="aviso">A conta de Furriel só funciona depois de confirmar o e-mail e de ser aprovada por um Furriel já ativo.</p>
 <div class="grid2"><label class="f"><span>Posto / graduação</span><input class="i" name="grad" value="Cad PM" required></label>
@@ -360,7 +375,7 @@ return `<main class="login restrito"><div class="login-card">
 }
 function vCadastro(){
 return `<main class="login"><div class="login-card">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Criar minha conta</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Materiais</p><p>Criar minha conta</p></div></div>
 <form id="f-cad" class="stack" autocomplete="off">
 <div class="grid2"><label class="f"><span>Posto / graduação</span><input class="i" name="grad" value="Cad PM" required></label>
 <label class="f"><span>Nome de guerra</span><input class="i" name="nome" required></label></div>
@@ -378,7 +393,7 @@ return `<main class="login"><div class="login-card">
 function vVerificar(){
 const e=auth.currentUser?auth.currentUser.email:'';
 return `<main class="login"><div class="login-card stack">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Confirme seu e-mail</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Materiais</p><p>Confirme seu e-mail</p></div></div>
 <p>Enviamos um link para <b>${esc(e)}</b>. Abra seu e-mail institucional, clique no link e volte aqui.</p>
 <p class="aviso">Não chegou? Procure na caixa de spam ou lixo eletrônico. O remetente é noreply@${esc(SICAM_FIREBASE.authDomain||'firebaseapp.com')}.</p>
 <p class="erro" id="ver-erro"></p>
@@ -388,7 +403,7 @@ return `<main class="login"><div class="login-card stack">
 }
 function vAguardando(){
 return `<main class="login"><div class="login-card stack">
-<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>Cadastro recebido</p></div></div>
+<div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Materiais</p><p>Cadastro recebido</p></div></div>
 <p>Seu e-mail foi confirmado. Agora a Furrielação precisa liberar seu acesso.</p>
 <p class="muted small">Esta tela atualiza sozinha assim que o acesso for liberado.</p>
 <button class="btn btn-block" data-act="sair">Sair</button><p class="versao-app">SICAM v${VERSAO}</p></div></main>`;
@@ -536,17 +551,20 @@ const b=new Date(a.getTime()+24*3600e3);
 openModal('Nova solicitação',`<form id="f-sol" class="stack">
 <div class="ficha" id="ficha-cart">${fichaCarrinho()}</div>
 <div class="grid2">
-<label class="f"><span>Retirada</span><input class="i" type="datetime-local" name="ret" value="${toLocalInput(a)}" required></label>
+<label class="f"><span>Horário de retirada</span><input class="i" type="datetime-local" name="ret" value="${toLocalInput(a)}" min="${toLocalInput(new Date())}" max="${toLocalInput(new Date(Date.now()+ANTEC_MAX_DIAS*864e5))}" required></label>
 <label class="f"><span>Devolução prevista</span><input class="i" type="datetime-local" name="dev" value="${toLocalInput(b)}" required></label>
 </div>
 <label class="f"><span>Finalidade</span><select class="i" name="fin">${['Instrução','Serviço','Policiamento / operação','Formatura / solenidade','Outra'].map(x=>`<option>${x}</option>`).join('')}</select></label>
 <label class="f"><span>Observação (opcional)</span><textarea class="i" name="obs" placeholder="Ex.: instrução de tiro, turma B"></textarea></label>
 <p class="erro" id="sol-erro"></p>
 <button class="btn btn-pri btn-block">Enviar solicitação</button></form>`,'',
-'O Furriel recebe o pedido, confere o que há disponível e avisa quando o material estiver separado.');
+`Informe quando vai retirar o material (até ${ANTEC_MAX_DIAS} dias de antecedência). A Furrielação atende pela ordem do horário de retirada.`);
 }
 async function enviarSolicitacao(fd){
 const ret=new Date(fd.get('ret')), dev=new Date(fd.get('dev'));
+if(isNaN(ret)||isNaN(dev)){$('#sol-erro').textContent='Informe a data e a hora da retirada e da devolução.';return;}
+if(ret.getTime()<Date.now()-10*60e3){$('#sol-erro').textContent='O horário de retirada já passou. Escolha um horário a partir de agora.';return;}
+if(ret.getTime()>Date.now()+ANTEC_MAX_DIAS*864e5){$('#sol-erro').textContent=`A retirada pode ser agendada com no máximo ${ANTEC_MAX_DIAS} dias de antecedência.`;return;}
 if(!(dev>ret)){$('#sol-erro').textContent='A devolução precisa ser depois da retirada.';return;}
 const itens=Object.entries(ui.cart).filter(([,q])=>q>0).map(([tipoId,qtd])=>({tipoId,qtd}));
 if(!itens.length){$('#sol-erro').textContent='Escolha ao menos um material.';return;}
@@ -571,7 +589,7 @@ openModal('Trocar minha senha',`<form id="f-senha" class="stack" autocomplete="o
 function verReserva(id){
 const r=D.reservas.find(x=>x.id===id); if(!r)return;
 const u=me(), admin=u.perfil==='furriel';
-const passos=r.origem?[['Transferência','Recebida por transferência'],['Devolvida','Devolvido']]:[['Solicitada','Solicitada'],['Aprovada','Aprovada pelo Furriel'],['Separada','Material separado'],['Assinada','Retirada assinada pelo militar'],['Cautelada','Entrega confirmada pelo Furriel'],['Devolvida','Devolvido']];
+const passos=r.origem?[['Transferência','Recebida por transferência'],['Devolvida','Devolvido']]:r.balcao?[['Cautela no balcão','Cautela aberta no balcão'],['Separada','Material separado'],['Assinada','Retirada assinada pelo militar'],['Cautelada','Entrega confirmada pelo Furriel'],['Devolvida','Devolvido']]:[['Solicitada','Solicitada'],['Aprovada','Aprovada pelo Furriel'],['Separada','Material separado'],['Assinada','Retirada assinada pelo militar'],['Cautelada','Entrega confirmada pelo Furriel'],['Devolvida','Devolvido']];
 if(r.status==='transferida')passos[passos.length-1]=['Transferida','Cautela transferida'];
 const log=r.log||[];const find=a=>log.find(l=>l.a===a);
 const fim=log.find(l=>l.a==='Recusada'||l.a==='Cancelada');
@@ -736,7 +754,7 @@ const pend=D.reservas.filter(r=>r.status==='pendente').length,ncanc=D.reservas.f
 const late=D.reservas.filter(atrasada).length;
 const nativ=D.reservas.filter(r=>r.status==='cautelada').length;
 const upend=D.users.filter(u=>u.pendente).length;
-document.title=(pend?`(${pend}) `:'')+'SICAM – Sistema Integrado de Cautela de Armamento e Munição';
+document.title=(pend?`(${pend}) `:'')+'SICAM – Sistema Integrado de Cautela de Materiais';
 const views={painel:vPainel,solic:vSolic,ativas:vAtivas,material:vMaterial,militares:vMilitares,hist:vHist};
 return `<div class="shell"><nav class="side" aria-label="Menu do Furriel">
 <div class="brand"><img class="seal-img" src="brasao-apmg.png" alt="Brasão da APMG"><div><h1>SICAM</h1><p>Furrielação APMG</p></div></div>
@@ -783,12 +801,15 @@ tx.update(doc(db,'reservas',r.id),{status:'cancelada',log:[...(o.log||[]),{t:now
 catch(e){$('#cancf-erro').textContent=e&&e.msg?e.msg:erroFirebase(e);return;}
 closeModal();toast(`${nr(r.num)} cancelada.${(r.unidades||[]).length||(r.municao||[]).length?' O material separado volta ao estoque.':''}`);
 }
+/* Destaque na fila: retirada que começa em até 1 hora (ou cujo horário acabou de passar) */
+const retiradaProxima=r=>['pendente','aprovada','separada'].includes(r.status)&&!!r.retirada&&Date.now()>=new Date(r.retirada).getTime()-3600e3&&!retiradaAtrasada(r);
 function cardAdmin(r){
-return `<div class="card">
+return `<div class="card${retiradaAtrasada(r)?' card-late':retiradaProxima(r)?' card-prox':''}">
 <button class="clickable" style="background:none;border:0;padding:0" data-act="ver" data-id="${r.id}">
 <div class="card-t"><div><span class="nr">${nr(r.num)}</span><p style="font-weight:600">${esc(nomeM(r.userId))}</p></div>${stamp(r)}</div>
 ${itensLi(r)}${['pendente','aprovada'].includes(r.status)?(r.itens||[]).map(i=>{const c=contagem(i.tipoId);return i.qtd>c.disponivel?`<p class="falta">⚠ ${esc(tipo(i.tipoId).nome)}: há ${c.disponivel} disponível(is) para ${i.qtd} pedido(s)</p>`:'';}).join(''):''}
-<dl class="meta"><dt>Retirada</dt><dd>${fmt(r.retirada)}${retiradaAtrasada(r)?' <span class="tag c-stamp">Retirada atrasada</span>':''}</dd><dt>Devolução</dt><dd class="${atrasada(r)?'c-stamp':''}">${fmt(r.devolucao)}</dd><dt>Finalidade</dt><dd>${esc(r.finalidade)}</dd></dl>
+<dl class="meta"><dt>Retirada</dt><dd>${fmt(r.retirada)}${retiradaAtrasada(r)?' <span class="tag c-stamp">Retirada atrasada</span>':retiradaProxima(r)?' <span class="tag tag-prox">Retirada próxima</span>':''}</dd><dt>Devolução</dt><dd class="${atrasada(r)?'c-stamp':''}">${fmt(r.devolucao)}</dd><dt>Finalidade</dt><dd>${esc(r.finalidade)}</dd></dl>
+${r.balcao?`<p class="small" style="margin-top:.4rem"><span class="tag tag-balcao">Cautela no balcão</span>${r.balcao.motivo?' '+esc(r.balcao.motivo):''}</p>`:''}
 ${r.status==='separada'?(r.assinatura?`<p class="small c-ok" style="margin-top:.5rem">Assinado pelo militar às ${fmt(r.assinatura.em)}, ${r.assinatura.metodo==='biometria'?'com digital/Face ID':'com senha'}.</p>`
 :'<p class="small muted" style="margin-top:.5rem">Aguardando o militar assinar no celular.</p>'):''}
 </button>
@@ -834,7 +855,7 @@ function vPainel(){
 const Rs=D.reservas, c=s=>Rs.filter(r=>r.status===s).length;
 const late=Rs.filter(atrasada).length;
 const feed=Rs.flatMap(r=>(r.log||[]).map(l=>({...l,r}))).sort((a,b)=>b.t.localeCompare(a.t)).slice(0,8);
-return `<div class="a-head"><div><h1>Painel</h1><p>${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</p></div><div class="row" style="align-items:center"><button class="btn btn-pri" data-act="plantao">📋 Relatório do plantão</button><button class="btn" data-act="backup" title="Baixar cópia de segurança de todos os dados">💾 Exportar backup</button><div style="min-width:200px">${botaoAvisos()}</div></div></div>
+return `<div class="a-head"><div><h1>Painel</h1><p>${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</p></div><div class="row" style="align-items:center"><button class="btn btn-pri" data-act="balcao">+ Cautela no balcão</button><button class="btn" data-act="plantao">📋 Relatório do plantão</button><button class="btn" data-act="backup" title="Baixar cópia de segurança de todos os dados">💾 Exportar backup</button><div style="min-width:200px">${botaoAvisos()}</div></div></div>
 ${D.reservas.some(r=>canceladaPeloMilitar(r)&&!r.cienteFurriel)?`<div class="aviso-cautelas"><span><b>${D.reservas.filter(r=>canceladaPeloMilitar(r)&&!r.cienteFurriel).length} solicitação(ões) cancelada(s) pelo militar</b> aguardando sua ciência.</span><button class="btn btn-sm btn-pri" data-act="go" data-v="solic">Ver</button></div>`:''}<div class="kpis">
 <button class="kpi" data-act="go" data-v="solic"><strong>${c('pendente')}</strong><span>aguardando aprovação</span></button>
 <button class="kpi" data-act="go" data-v="solic"><strong>${c('aprovada')+c('separada')}</strong><span>a separar ou retirar</span></button>
@@ -860,7 +881,7 @@ const quadroCanc=canc.length?`<section style="margin-bottom:1.2rem"><div class="
 <div class="stack">${canc.map(r=>{const l=logDe(r,'Cancelada')||{};return `<div class="card canc-card"><div class="card-t"><div><span class="nr">${nr(r.num)}</span><p style="font-weight:600">${esc(nomeM(r.userId))}</p></div>${stamp(r)}</div>
 ${itensLi(r)}<p class="small" style="margin-top:.4rem">Cancelada em <b>${fmt(l.t)}</b>, ${faseCancel(r)}.${(r.unidades||[]).length||(r.municao||[]).length?(r.liberado?' <span class="c-ok">Material separado já voltou ao estoque.</span>':' Material separado voltando ao estoque…'):''}</p>
 <div class="row" style="margin-top:.6rem;justify-content:flex-end"><button class="btn btn-sm" data-act="ver" data-id="${r.id}">Ver detalhes</button><button class="btn btn-sm btn-pri" data-act="ciente" data-id="${r.id}">Ciente</button></div></div>`;}).join('')}</div></section>`:'';
-return `<div class="a-head"><div><h1>Solicitações</h1><p>Cada pedido avança da esquerda para a direita. Ordenado pela hora de retirada.</p></div></div>
+return `<div class="a-head"><div><h1>Solicitações</h1><p>Cada pedido avança da esquerda para a direita. Ordenado pelo horário de retirada informado pelo militar.</p></div><div class="row"><button class="btn btn-pri" data-act="balcao">+ Cautela no balcão</button></div></div>
 ${quadroCanc}<div class="cols">${col('pendente','Aguardando aprovação','Nenhum pedido novo.')}${col('aprovada','Aprovadas – separar','Nada para separar.')}${col('separada','Prontas – retirada','Ninguém aguardando retirada.')}</div>`;
 }
 function vAtivas(){
@@ -1167,22 +1188,28 @@ openModal('Recusar '+nr(r.num),`<form id="f-rec" data-id="${r.id}" class="stack"
 <button class="btn btn-warn btn-block">Recusar solicitação</button></form>`);
 }
 /* ====== Separação: o Furriel digita o nº de série, o patrimônio ou o nome e escolhe na lista ====== */
+/* A separação serve a um pedido já existente (rid) ou a uma cautela no balcão ainda não gravada (virt) */
+const sepR=()=>ui.sep?(ui.sep.virt||R(ui.sep.rid)):null;
 function separar(id){
 const r=R(id);if(!r)return;if(r.status!=='aprovada'){toast('Esta solicitação não está mais aguardando separação.',true);return;}
 ui.sep={rid:id,sel:{},res:[],seq:0};
+abrirSeparacao(r);
+}
+function abrirSeparacao(r){
+const virt=!!ui.sep.virt;
 let lotes='';
 for(const i of r.itens.filter(i=>isMun(i.tipoId))){const tn=tipo(i.tipoId).nome,ls=lotesDe(i.tipoId).filter(l=>l.qtd>0);
 lotes+=`<div class="sep-item"><div class="top"><b>${esc(tn)}</b><span class="cnt" data-cntm="${i.tipoId}">0 de ${i.qtd} cart.</span></div>
 <div class="lotes" data-mun="${i.tipoId}" data-q="${i.qtd}">${ls.map(l=>`<label class="lote-row" data-s="${esc(normTxt('lote '+l.lote+' '+tn))}" data-lote="${esc(normTxt(l.lote))}"><span><span class="mono">Lote ${esc(l.lote)}</span><span class="ser">${l.qtd} cart. em estoque</span></span>
 <input class="i" type="number" inputmode="numeric" min="0" max="${Math.min(l.qtd,i.qtd)}" step="1" data-lid="${l.id}" data-max="${l.qtd}" placeholder="0" aria-label="Cartuchos do lote ${esc(l.lote)}"></label>`).join('')||'<p class="c-stamp small">Sem estoque deste calibre.</p>'}</div></div>`;}
-openModal('Separar material – '+nr(r.num),`<form id="f-sep" data-id="${r.id}">
+openModal(virt?'Cautela no balcão – separar material':'Separar material – '+nr(r.num),`<form id="f-sep" data-id="${r.id||''}">
 <div class="busca sep-busca"><label class="sep-lbl" for="sep-q">🔎 Digite o nº de série, o nº de patrimônio ou o nome do material</label>
 <input class="i" type="search" id="sep-q" placeholder="Ex.: 2405512, HT-003 ou capa de chuva" autocomplete="off" autocapitalize="off" enterkeyhint="search" aria-label="Pesquisar material">
 <div id="sep-res"></div></div>
 <div class="row between" style="margin-top:.8rem"><h3>Itens do pedido</h3><button type="button" class="link" data-act="sepAuto">Preencher automaticamente</button></div>
 <div id="sep-itens">${r.itens.filter(i=>!isMun(i.tipoId)).map(htmlSepTipo).join('')}</div>${lotes}
-<p class="small muted">Se não houver o suficiente, separe o que existe: a solicitação fica registrada como atendida parcialmente.</p>
-<p class="erro" id="sep-erro"></p><button class="btn btn-pri btn-block">Confirmar separação</button></form>`,'',esc(nomeM(r.userId))+' · retirada '+fmt(r.retirada));
+<p class="small muted">${virt?'Se não houver o suficiente, separe o que existe: a cautela registra só o que foi entregue.':'Se não houver o suficiente, separe o que existe: a solicitação fica registrada como atendida parcialmente.'}</p>
+<p class="erro" id="sep-erro"></p>${virt?'<div class="row" style="gap:.5rem"><button type="button" class="btn" data-act="balVoltar">← Voltar</button><button class="btn btn-pri" style="flex:1">Confirmar separação</button></div>':'<button class="btn btn-pri btn-block">Confirmar separação</button>'}</form>`,'',esc(nomeM(r.userId))+(virt?' · cautela no balcão'+(r.balcao&&r.balcao.motivo?' · '+esc(r.balcao.motivo):''):' · retirada '+fmt(r.retirada)));
 const q=$('#sep-q');if(q)q.focus();
 }
 function htmlSepTipo(i){
@@ -1191,13 +1218,13 @@ return `<div class="sep-item${ok?' ok':''}" id="sep-t-${i.tipoId}"><div class="t
 ${ok?'<span class="small c-ok">Completo ✓</span>':`<span class="row"><button type="button" class="btn btn-sm" data-act="sepListar" data-t="${i.tipoId}">Ver disponíveis</button><button type="button" class="btn btn-sm btn-pri" data-act="sepProx" data-t="${i.tipoId}">+ Próximo disponível</button></span>`}</div>
 <div class="chips-sel">${sel.map(u=>`<span class="chip-sel"><span class="mono">${esc(u.pat)}</span>${u.serie?`<span class="small">série ${esc(u.serie)}</span>`:''}<button type="button" data-act="sepRmU" data-t="${i.tipoId}" data-id="${u.id}" aria-label="Remover ${esc(u.pat)}">✕</button></span>`).join('')||'<span class="small muted">Nada separado ainda.</span>'}</div></div>`;
 }
-function sepAtualizarTipo(tid){const r=R(ui.sep.rid),i=r&&r.itens.find(x=>x.tipoId===tid);const el=document.getElementById('sep-t-'+tid);if(i&&el)el.outerHTML=htmlSepTipo(i);}
+function sepAtualizarTipo(tid){const r=sepR(),i=r&&r.itens.find(x=>x.tipoId===tid);const el=document.getElementById('sep-t-'+tid);if(i&&el)el.outerHTML=htmlSepTipo(i);}
 function sepContar(){
 document.querySelectorAll('#f-sep .lotes').forEach(g=>{const n=[...g.querySelectorAll('input')].reduce((a,x)=>a+(parseInt(x.value,10)||0),0),q=+g.dataset.q,c=document.querySelector(`[data-cntm="${g.dataset.mun}"]`);
 if(c){c.textContent=`${n} de ${q} cart.`;c.classList.toggle('full',n===q);}});
 }
 function sepPodeAdd(u){
-const r=R(ui.sep.rid);const it=r.itens.find(i=>i.tipoId===u.tipoId&&!isMun(i.tipoId));
+const r=sepR();const it=r.itens.find(i=>i.tipoId===u.tipoId&&!isMun(i.tipoId));
 if(!it)return 'Não faz parte deste pedido.';
 const sel=ui.sep.sel[u.tipoId]||[];if(sel.some(x=>x.id===u.id))return 'selecionado';
 if(u.status!=='disponivel'){const rr=comQuem(u.id);return `${(USTAT[u.status]||[u.status])[0]}${rr?' com '+nomeM(rr.userId):''}.`;}
@@ -1215,7 +1242,7 @@ const sn=await getDocs(query(collection(db,'unidades'),where('tipoId','==',tid),
 return guardarU(sn.docs.map(d=>({id:d.id,...d.data()}))).filter(u=>!sel.includes(u.id)).sort((a,b)=>String(a.pat).localeCompare(String(b.pat),'pt-BR',{numeric:true}));
 }
 async function sepProx(tid){
-const r=R(ui.sep.rid),it=r.itens.find(i=>i.tipoId===tid);if(!it)return;
+const r=sepR(),it=r.itens.find(i=>i.tipoId===tid);if(!it)return;
 const falta=it.qtd-(ui.sep.sel[tid]||[]).length;if(falta<=0)return;
 try{const l=await sepDisponiveis(tid,1);if(!l.length){$('#sep-erro').textContent=`Não há mais ${tipo(tid).nome} disponível.`;return;}sepAdd(l[0]);}
 catch(e){$('#sep-erro').textContent=erroFirebase(e);}
@@ -1230,7 +1257,7 @@ catch(e){box.innerHTML=`<p class="erro">${esc(erroFirebase(e))}</p>`;}
 let sepTimer=null;
 function sepDigitou(v){clearTimeout(sepTimer);sepTimer=setTimeout(()=>sepBuscar(v),300);}
 async function sepBuscar(txt){
-const box=$('#sep-res');if(!box||!ui.sep)return;const r=R(ui.sep.rid);const q=String(txt||'').trim();const seq=++ui.sep.seq;
+const box=$('#sep-res');if(!box||!ui.sep)return;const r=sepR();const q=String(txt||'').trim();const seq=++ui.sep.seq;
 if(!q){box.innerHTML='';ui.sep.res=[];return;}
 const nq=normTxt(q);
 const porNome=r.itens.filter(i=>!isMun(i.tipoId)&&normTxt(tipo(i.tipoId).nome+' '+(tipo(i.tipoId).desc||'')).includes(nq));
@@ -1258,14 +1285,14 @@ const semOk=(ui.sep.res||[]).find(u=>normTxt(u.pat)===nq||normTxt(u.serie||'')==
 $('#sep-erro').textContent=semOk?`${semOk.pat}: ${sepPodeAdd(semOk)}`:us.length>1?'Mais de um item corresponde. Toque em "Adicionar" no item certo.':'Nada disponível corresponde a essa pesquisa neste pedido.';
 }
 async function sepAutomatico(btn){
-const r=R(ui.sep.rid);btn.disabled=true;
+const r=sepR();btn.disabled=true;
 try{for(const i of r.itens.filter(i=>!isMun(i.tipoId))){const falta=i.qtd-(ui.sep.sel[i.tipoId]||[]).length;if(falta<=0)continue;const l=await sepDisponiveis(i.tipoId,falta);l.slice(0,falta).forEach(u=>sepAdd(u,true));}}
 catch(e){$('#sep-erro').textContent=erroFirebase(e);}
 document.querySelectorAll('#f-sep .lotes').forEach(g=>{let falta=+g.dataset.q;g.querySelectorAll('input').forEach(i=>{const v=Math.min(falta,+i.dataset.max);i.value=v||'';falta-=v;});});
 sepContar();btn.disabled=false;
 }
 async function confirmarSeparacao(form){
-const r=R(form.dataset.id);const sel=[],novos=[],mun=[];let parcial=false;const err=m=>{$('#sep-erro').textContent=m;};
+const r=sepR();if(!r)return;const sel=[],novos=[],mun=[];let parcial=false;const err=m=>{$('#sep-erro').textContent=m;};
 const uinfo={};
 for(const i of r.itens.filter(i=>!isMun(i.tipoId))){const l=ui.sep.sel[i.tipoId]||[];if(l.length<i.qtd)parcial=true;if(l.length)novos.push({tipoId:i.tipoId,qtd:l.length});l.forEach(u=>{sel.push(u.id);uinfo[u.id]={pat:u.pat,serie:u.serie||'',tipoId:u.tipoId};});}
 for(const g of form.querySelectorAll('.lotes')){
@@ -1280,7 +1307,8 @@ if(tot>q){err(`${tn}: foram pedidos ${q} cartuchos; você informou ${tot}.`);ret
 if(tot<q)parcial=true;if(tot)novos.push({tipoId:g.dataset.mun,qtd:tot});
 }
 if(r.itens.some(i=>isMun(i.tipoId))&&!form.querySelectorAll('.lotes').length)parcial=true;
-if(!sel.length&&!mun.length){err('Separe ao menos uma unidade ou informe a munição. Se não houver nada disponível, recuse a solicitação.');return;}
+if(!sel.length&&!mun.length){err(ui.sep.virt?'Separe ao menos uma unidade ou informe a munição.':'Separe ao menos uma unidade ou informe a munição. Se não houver nada disponível, recuse a solicitação.');return;}
+if(ui.sep.virt){await gravarCautelaBalcao(r,{sel,mun,uinfo,novos,parcial});return;}
 const upd={status:'separada',unidades:sel,municao:mun,uinfo,log:[...r.log,entrada('Separada',parcial?'Atendida parcialmente':'')]};
 if(parcial){upd.itensSol=r.itens;upd.itens=novos;}
 try{
@@ -1299,6 +1327,123 @@ tx.update(doc(db,'reservas',r.id),upd);
 }catch(e){if(e&&e.code==='cancelada'){closeModal();toast(`${nr(r.num)} foi cancelada pelo militar. Nada foi separado.`,true);return;}if(e&&e.code==='mudou'){err('Uma das unidades ou o estoque acabou de mudar. Remova o item marcado e escolha outro.');return;}throw e;}
 ui.sep=null;closeModal();toast(parcial?`${nr(r.num)} separada parcialmente. O militar já vê o que foi separado.`:`${nr(r.num)} separada. O militar já vê que o material está pronto.`);
 }
+/* ============ Cautela no balcão ============
+   Para o militar que chega à Furrielação com pressa (ex.: recebeu ordem para cautelar na hora).
+   O Furriel escolhe o militar e o material, separa as unidades e a cautela nasce já "pronta para retirada".
+   O militar assina no próprio celular ou, se preferir/estiver sem celular, com a senha dele no aparelho da Furrielação. */
+const MOTIVOS_BALCAO=['Ordem do oficial de dia','Serviço / escala','Instrução','Missão / ocorrência','Outro'];
+const FINALIDADES=['Instrução','Serviço','Policiamento / operação','Formatura / solenidade','Outra'];
+const militaresBalcao=()=>D.users.filter(x=>x.ativo&&!x.pendente&&x.id!==sess.userId).sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'));
+function opcoesMil(q,selId){
+const nq=normTxt(q),todos=militaresBalcao();
+const l=nq?todos.filter(x=>normTxt([x.grad,x.nome,x.login,x.pelotao,x.email].join(' ')).includes(nq)):todos;
+const sel=selId&&l.some(x=>x.id===selId)?selId:(l.length===1?l[0].id:'');
+return `<option value="">${l.length?`Selecione o militar… (${l.length} encontrado${l.length>1?'s':''})`:'Nenhum militar encontrado'}</option>`+l.slice(0,300).map(x=>`<option value="${x.id}" ${x.id===sel?'selected':''}>${esc(nomeM(x.id))}${x.pelotao?' – '+esc(x.pelotao):''}${x.login?' · '+esc(x.login):''}</option>`).join('');
+}
+function opcoesTipoBalcao(){
+const ts=ordTipos(D.tipos);const cats=[...new Set(ts.map(catOf))];
+return '<option value="">Escolha o material…</option>'+cats.map(c=>`<optgroup label="${esc(c)}">${ts.filter(t=>catOf(t)===c).map(t=>{const k=contagem(t.id);
+return `<option value="${t.id}">${esc(t.nome)} – ${t.mun?k.disponivel+' cart. em estoque':(contagemPronta?k.disponivel+' disponível(is)':'…')}</option>`;}).join('')}</optgroup>`).join('');
+}
+/* Avisa quando entregar no balcão deixa faltando material para pedidos já feitos pelo app */
+function conflitosBalcao(){
+return (ui.bal.itens||[]).map(i=>{const t=tipo(i.tipoId),k=contagem(i.tipoId),un=t.mun?' cart.':'';
+if(i.qtd>k.disponivel)return `<div class="bal-conf"><b>⚠ ${esc(t.nome)}:</b> há só ${k.disponivel}${un} disponível(is) agora. Na separação, entregue o que houver.</div>`;
+if(i.qtd>k.livre){const rs=D.reservas.filter(r=>['pendente','aprovada'].includes(r.status)&&(r.itens||[]).some(x=>x.tipoId===i.tipoId)).sort((a,b)=>String(a.retirada).localeCompare(String(b.retirada)));
+return `<div class="bal-conf"><b>⚠ ${esc(t.nome)}:</b> entregar ${i.qtd}${un} aqui vai deixar faltando para pedido(s) já feito(s) pelo app:<ul>${rs.map(r=>`<li>${nr(r.num)} · ${esc(nomeM(r.userId))} · retirada ${fmt(r.retirada)} (${(r.itens.find(x=>x.tipoId===i.tipoId)||{}).qtd||0}${un})</li>`).join('')}</ul>Você pode entregar mesmo assim, mas esses pedidos poderão ser atendidos só parcialmente.</div>`;}
+return '';}).join('');
+}
+function htmlBalItens(){
+const l=ui.bal.itens||[];
+return (l.length?`<ul class="bal-lista">${l.map(i=>`<li><span class="nm"><b>${i.qtd}${isMun(i.tipoId)?' cart.':'×'}</b> ${esc(tipo(i.tipoId).nome)}</span><button type="button" class="mini rm" data-act="balRm" data-t="${i.tipoId}" aria-label="Remover ${esc(tipo(i.tipoId).nome)}">✕</button></li>`).join('')}</ul>`
+:'<p class="small muted">Nenhum material adicionado ainda.</p>')+conflitosBalcao();
+}
+function abrirBalcao(){
+const d=new Date(Date.now()+12*3600e3);d.setMinutes(0,0,0);
+ui.bal={itens:[],q:'',dev:toLocalInput(d),fin:'Serviço',mot:MOTIVOS_BALCAO[0],obs:''};ui.sep=null;
+desenharBalcao();
+}
+function desenharBalcao(){
+const b=ui.bal;
+openModal('Nova cautela no balcão',`<form id="f-bal" class="stack" autocomplete="off">
+<p class="small muted" style="margin:0">Para o militar que está no balcão e precisa do material na hora. A cautela não passa pela fila de pedidos.</p>
+<div><label class="f"><span>Militar</span><input class="i" type="search" data-inp="balq" value="${esc(b.q)}" placeholder="Filtrar por nome, nº de aluno ou pelotão" autocapitalize="off"></label>
+<select class="i" name="mil" id="bal-mil" style="margin-top:.4rem" required aria-label="Militar">${opcoesMil(b.q,b.userId)}</select></div>
+<div><div class="bal-add"><label class="f"><span>Material</span><select class="i" id="bal-tipo" aria-label="Material">${opcoesTipoBalcao()}</select></label>
+<label class="f"><span>Qtd.</span><input class="i" type="number" id="bal-qtd" min="1" step="1" value="1" inputmode="numeric" aria-label="Quantidade"></label>
+<button type="button" class="btn" data-act="balAdd">+ Adicionar</button></div>
+<div id="bal-itens" style="margin-top:.5rem">${htmlBalItens()}</div></div>
+<div class="grid2"><label class="f"><span>Devolução prevista</span><input class="i" type="datetime-local" name="dev" value="${esc(b.dev)}" required></label>
+<label class="f"><span>Finalidade</span><select class="i" name="fin">${FINALIDADES.map(x=>`<option ${x===b.fin?'selected':''}>${x}</option>`).join('')}</select></label></div>
+<label class="f"><span>Motivo da cautela imediata</span><select class="i" name="mot">${MOTIVOS_BALCAO.map(x=>`<option ${x===b.mot?'selected':''}>${x}</option>`).join('')}</select></label>
+<label class="f"><span>Observação (obrigatória se "Outro")</span><textarea class="i" name="obs" placeholder="Ex.: ordem do Ten. Fulano para o policiamento do evento">${esc(b.obs)}</textarea></label>
+<p class="erro" id="bal-erro"></p>
+<button class="btn btn-pri btn-block">Continuar: separar o material</button></form>`,'','Fica registrada no histórico e no relatório do plantão como "Cautela no balcão".');
+}
+function balAdd(){
+const tid=($('#bal-tipo')||{}).value,q=parseInt(($('#bal-qtd')||{}).value,10),err=m=>{$('#bal-erro').textContent=m;};
+if(!tid){err('Escolha o material.');return;}
+if(!Number.isInteger(q)||q<1){err('Informe a quantidade.');return;}
+const t=tipo(tid),max=t.mun?(t.limite||100)*5:50;
+const ex=ui.bal.itens.find(i=>i.tipoId===tid),novo=(ex?ex.qtd:0)+q;
+if(novo>max){err(`${t.nome}: no máximo ${max}${t.mun?' cartuchos':''} por cautela.`);return;}
+if(ex)ex.qtd=novo;else ui.bal.itens.push({tipoId:tid,qtd:q});
+err('');$('#bal-itens').innerHTML=htmlBalItens();$('#bal-tipo').value='';$('#bal-qtd').value='1';
+}
+function lerCamposBalcao(){
+const f=$('#f-bal');if(!f||!ui.bal)return;const fd=new FormData(f);
+Object.assign(ui.bal,{userId:fd.get('mil')||ui.bal.userId,dev:fd.get('dev')||ui.bal.dev,fin:fd.get('fin'),mot:fd.get('mot'),obs:String(fd.get('obs')||'')});
+}
+function continuarBalcao(fd){
+const err=m=>{$('#bal-erro').textContent=m;};lerCamposBalcao();
+const u=D.users.find(x=>x.id===fd.get('mil'));
+if(!u){err('Selecione o militar.');return;}
+if(!ui.bal.itens.length){err('Adicione ao menos um material.');return;}
+const dev=new Date(fd.get('dev'));if(isNaN(dev)||dev<=new Date()){err('A devolução prevista precisa ser depois de agora.');return;}
+const obs=String(fd.get('obs')||'').trim();let mot=fd.get('mot');
+if(mot==='Outro'){if(!obs){err('Descreva o motivo na observação.');return;}mot=obs;}
+const virt={id:'',num:0,userId:u.id,itens:ui.bal.itens.map(i=>({...i})),retirada:nowISO(),devolucao:dev.toISOString(),finalidade:fd.get('fin'),obs:mot===obs?'':obs,log:[],balcao:{motivo:mot}};
+ui.sep={rid:null,virt,sel:{},res:[],seq:0};
+abrirSeparacao(virt);const q=$('#sep-q');if(q)q.focus();
+}
+async function gravarCautelaBalcao(r,{sel,mun,uinfo,novos,parcial}){
+const err=m=>{$('#sep-erro').textContent=m;};
+const ref=doc(collection(db,'reservas')),em=nowISO(),motivo=r.balcao.motivo||'';let n=0;
+const dados={userId:r.userId,itens:novos,unidades:sel,municao:mun,uinfo,retirada:em,devolucao:r.devolucao,finalidade:r.finalidade,obs:r.obs||'',
+status:'separada',cond:{},criadoEm:em,balcao:{por:sess.userId,em,motivo},
+log:[{t:em,a:'Cautela no balcão',por:sess.userId,obs:'Aberta pela Furrielação'+(motivo?' – motivo: '+motivo:'')},{t:em,a:'Separada',por:sess.userId,obs:parcial?'Entregue só o que havia disponível':''}]};
+if(parcial)dados.itensSol=r.itens;
+try{
+await runTransaction(db,async tx=>{
+const cref=doc(db,'config','contador');const cs=await tx.get(cref);
+const snaps=await Promise.all(sel.map(id=>tx.get(doc(db,'unidades',id))));
+const somas={};mun.forEach(x=>{somas[x.loteId]=(somas[x.loteId]||0)+x.qtd;});const lids=Object.keys(somas);
+const lsn=await Promise.all(lids.map(id=>tx.get(doc(db,'lotes',id))));
+if(snaps.some(s=>!s.exists()||s.data().status!=='disponivel'))throw {code:'mudou'};
+lids.forEach((lid,i)=>{if(!lsn[i].exists()||(lsn[i].data().qtd||0)<somas[lid])throw {code:'mudou'};});
+n=((cs.exists()&&cs.data().seq)||0)+1;
+tx.update(cref,{seq:n});
+sel.forEach(id=>tx.update(doc(db,'unidades',id),{status:'separado'}));
+lids.forEach((lid,i)=>tx.update(doc(db,'lotes',lid),{qtd:(lsn[i].data().qtd||0)-somas[lid]}));
+tx.set(ref,{...dados,num:n});
+tx.set(doc(db,'historico',r.userId),{em});
+});
+}catch(e){
+if(e&&e.code==='mudou'){err('Uma das unidades ou o estoque acabou de mudar. Remova o item marcado e escolha outro.');return;}
+if(e&&e.code==='permission-denied'){err('O servidor não permitiu gravar a cautela no balcão. As regras do Firestore precisam permitir que o Furriel crie cautelas em nome do militar.');return;}
+throw e;}
+ui.sep=null;ui.bal=null;
+const ficha={unidades:sel,municao:mun,uinfo};
+openModal('Cautela '+nr(n)+' – assinatura da retirada',`<div class="stack">
+<div class="ficha"><span class="tag tag-balcao">Cautela no balcão</span><p style="font-weight:600;margin-top:.4rem">${esc(nomeM(r.userId))}</p><p class="small muted">${esc(user(r.userId).pelotao||'')}</p>${fichaItens(ficha)}
+<dl class="meta"><dt>Devolver até</dt><dd>${fmt(r.devolucao)}</dd><dt>Motivo</dt><dd>${esc(motivo)}</dd></dl></div>
+<p>Material separado${parcial?' (parcialmente)':''}. Como ${esc(nomeM(r.userId))} vai assinar a retirada?</p>
+<div class="bal-opc">
+<button type="button" class="btn btn-pri" data-act="balAssAqui" data-id="${ref.id}">✍️ Aqui, com a senha do militar<small>Ele confere o material e digita a própria senha neste aparelho. A entrega fica registrada na hora.</small></button>
+<button type="button" class="btn" data-act="balAssCel" data-id="${ref.id}">📱 No celular do militar<small>A cautela já aparece no app dele como "Pronto para retirada". Depois que ele assinar, toque em "Confirmar entrega" em Solicitações.</small></button>
+</div></div>`);
+}
+async function esperarReserva(id){for(let i=0;i<60&&!R(id);i++)await new Promise(ok=>setTimeout(ok,100));return R(id);}
 function cautelar(id){
 const r=R(id);if(!r)return;
 openModal('Assinar no balcão – '+nr(r.num),`<form id="f-caut" data-id="${r.id}" class="stack" autocomplete="off">
@@ -1790,7 +1935,7 @@ for(const c of cols){const s=await getDocs(collection(db,c));dados[c]={};s.forEa
 try{const cs=await getDoc(doc(db,'config','contador'));if(cs.exists())dados.config={contador:cs.data()};}catch(e){}
 const a=new Date(),p=n=>String(n).padStart(2,'0');
 const carimbo=a.getFullYear()+'-'+p(a.getMonth()+1)+'-'+p(a.getDate())+'_'+p(a.getHours())+'h'+p(a.getMinutes());
-const bk={sistema:'SICAM – Sistema Integrado de Cautela de Armamento e Munição',versao:VERSAO,geradoEm:a.toISOString(),geradoPorUid:(sess&&sess.userId)||'',totalRegistros:total,colecoes:dados};
+const bk={sistema:'SICAM – Sistema Integrado de Cautela de Materiais',versao:VERSAO,geradoEm:a.toISOString(),geradoPorUid:(sess&&sess.userId)||'',totalRegistros:total,colecoes:dados};
 baixarArquivo(new Blob([JSON.stringify(bk)],{type:'application/json'}),'SICAM-backup-'+carimbo+'.json');
 toast('Backup gerado: '+total+' registros.');
 }catch(e){console.error(e);toast('Não foi possível gerar o backup: '+(e.code||e.message),true);}
@@ -1833,7 +1978,7 @@ const descR=r=>(r.unidades||[]).map(i=>descUnid(i,r.uinfo)).concat((r.municao||[
 const ev=[];
 D.reservas.forEach(r=>(r.log||[]).forEach(l=>{if(!l.t||l.t<a||l.t>b)return;
 const m={t:l.t,r,por:l.por,obs:l.obs||''};
-if(l.a==='Cautelada'&&(!meus||l.por===sess.userId))ev.push({...m,tipo:'Cautela entregue'});
+if(l.a==='Cautelada'&&(!meus||l.por===sess.userId))ev.push({...m,tipo:'Cautela entregue',obs:r.balcao?'Cautela no balcão'+(r.balcao.motivo?' – motivo: '+r.balcao.motivo:''):m.obs});
 else if(l.a==='Devolvida'&&(!meus||l.por===sess.userId))ev.push({...m,tipo:'Devolução recebida'});
 else if(l.a==='Transferência')ev.push({...m,tipo:'Transferência entre militares'});
 else if(l.a==='Cancelada'&&l.por===r.userId)ev.push({...m,tipo:'Cancelada pelo militar'});
@@ -1848,7 +1993,7 @@ return {ini,fim,meus,ev,ativas,aguardando,grupos,descR,atraso:ativas.filter(atra
 }
 function previaPlantao(d){
 const cont=g=>d.ev.filter(e=>e.tipo===g).length;
-const linha=e=>`<li><b>${fmt(e.t)}</b> · ${nr(e.r.num)} · <b>${esc(nomeM(e.r.userId))}</b> (${esc(user(e.r.userId).pelotao||'')})<br><span class="small">${esc(d.descR(e.r))}</span>${(e.tipo==='Devolução recebida'||e.tipo==='Cancelada pela Furrielação')&&e.obs?`<br><span class="small muted">${esc(e.obs)}</span>`:''}</li>`;
+const linha=e=>`<li><b>${fmt(e.t)}</b> · ${nr(e.r.num)} · <b>${esc(nomeM(e.r.userId))}</b> (${esc(user(e.r.userId).pelotao||'')})<br><span class="small">${esc(d.descR(e.r))}</span>${(e.tipo==='Devolução recebida'||e.tipo==='Cancelada pela Furrielação'||(e.tipo==='Cautela entregue'&&e.r.balcao))&&e.obs?`<br><span class="small muted">${esc(e.obs)}</span>`:''}</li>`;
 return `<div class="sit-resumo" style="margin-top:.8rem">${d.grupos.map(g=>`<div><b>${cont(g)}</b><span>${g.toLowerCase()}</span></div>`).join('')}<div><b>${d.ativas.length}</b><span>cautelas ativas no fim</span></div></div>
 ${d.grupos.filter(cont).map(g=>`<div class="plantao-sec"><h3>${g} (${cont(g)})</h3><ul style="padding:0">${d.ev.filter(e=>e.tipo===g).map(linha).join('')}</ul></div>`).join('')||'<p class="small muted" style="margin-top:.8rem">Nenhuma movimentação no período.</p>'}
 <div class="plantao-sec"><h3>Pendências para quem assume</h3><ul style="padding:0">
@@ -1882,7 +2027,7 @@ const cabe=h=>{if(y-h<M+24)nova();};
 const texto=(t,o={})=>{const f=o.f||F1,s=o.s||9,x=o.x||M,w=o.w||(W-2*M),c=o.c||preto;for(const l of quebra(t,f,s,w)){cabe(s*1.35);pg.drawText(l,{x,y:y-s,size:s,font:f,color:c});y-=s*1.35;}};
 const secao=t=>{cabe(40);y-=8;pg.drawLine({start:{x:M,y},end:{x:W-M,y},thickness:1,color:verde});y-=5;texto(t,{f:F2,s:11});y-=2;};
 nova();pg.drawRectangle({x:0,y:H-70,width:W,height:70,color:verde});
-const _br=await brasaoPDF(pdf),_tx=_br?desenhaBrasao(pg,P,_br,M,H-35,52):M;pg.drawText('SICAM',{x:_tx,y:H-36,size:20,font:F2,color:P.rgb(1,1,1)});pg.drawText(winAnsi('Sistema Integrado de Cautela de Armamento e Munição – Furrielação APMG'),{x:_tx,y:H-54,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
+const _br=await brasaoPDF(pdf),_tx=_br?desenhaBrasao(pg,P,_br,M,H-35,52):M;pg.drawText('SICAM',{x:_tx,y:H-36,size:20,font:F2,color:P.rgb(1,1,1)});pg.drawText(winAnsi('Sistema Integrado de Cautela de Materiais – Furrielação APMG'),{x:_tx,y:H-54,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
 y=H-88;texto('Relatório do plantão',{f:F2,s:14});y-=2;texto(`Período: ${periodo}`,{f:F2,s:10});texto(`Furriel: ${nomeM(sess.userId)}${d.meus?' (somente registros feitos por ele)':''}`,{s:9.5});texto(`Gerado em ${fmtC(nowISO())}`,{s:8.5,c:cinza});
 y-=4;texto(d.grupos.map(g=>`${g}: ${d.ev.filter(x=>x.tipo===g).length}`).join('   ·   ')+`   ·   Cautelas ativas no fim: ${d.ativas.length}`,{s:9,c:cinza});
 for(const g of d.grupos){const l=d.ev.filter(x=>x.tipo===g);if(!l.length)continue;secao(`${g} (${l.length})`);
@@ -1947,7 +2092,7 @@ const pl=[
 linhas:dados.flatMap(d=>d.itensLista.map(i=>[d.num,d.militar,i.material,i.pat,i.serie,i.lote,i.qtd,i.sit]))},
 {nome:'Andamento',cab:['Nº','Militar da cautela','Data e hora','Evento','Registrado por','Detalhes'],larg:[8,22,17,24,22,60],
 linhas:dados.flatMap(d=>d.andamento.map(a=>[d.num,d.militar,a.t,a.a,a.por,a.obs]))},
-{nome:'Sobre o relatório',cab:['Campo','Valor'],larg:[24,70],linhas:[['Relatório',titulo],['Gerado em',fmtC(nowISO())],['Gerado por',nomeM(sess.userId)],['Cautelas incluídas',dados.length],['Sistema','SICAM – Sistema Integrado de Cautela de Armamento e Munição – Furrielação APMG']]}];
+{nome:'Sobre o relatório',cab:['Campo','Valor'],larg:[24,70],linhas:[['Relatório',titulo],['Gerado em',fmtC(nowISO())],['Gerado por',nomeM(sess.userId)],['Cautelas incluídas',dados.length],['Sistema','SICAM – Sistema Integrado de Cautela de Materiais – Furrielação APMG']]}];
 baixarArquivo(montarXLSX(pl),`sicam-${arq}-${carimboArq()}.xlsx`);toast('Relatório Excel gerado.');
 }
 /* ---- PDF ---- */
@@ -1964,7 +2109,7 @@ const {lista,titulo,arq}=escopoRel(el);if(!lista.length){toast('Não há cautela
 const btn=el;const txt0=btn.textContent;btn.disabled=true;btn.textContent='Gerando…';
 try{
 const P=await carregarPDFLib();const pdf=await P.PDFDocument.create();
-pdf.setTitle(winAnsi('SICAM – '+titulo));pdf.setAuthor(winAnsi(nomeM(sess.userId)));pdf.setCreator('SICAM – Sistema Integrado de Cautela de Armamento e Munição – Furrielação APMG');
+pdf.setTitle(winAnsi('SICAM – '+titulo));pdf.setAuthor(winAnsi(nomeM(sess.userId)));pdf.setCreator('SICAM – Sistema Integrado de Cautela de Materiais – Furrielação APMG');
 const F1=await pdf.embedFont(P.StandardFonts.Helvetica),F2=await pdf.embedFont(P.StandardFonts.HelveticaBold);
 const W=595.28,H=841.89,M=40,verde=P.rgb(0,0.204,0.471),cinza=P.rgb(0.36,0.4,0.36),preto=P.rgb(0.1,0.12,0.1),linha=P.rgb(0.8,0.83,0.79);
 let pg,y;
@@ -1976,7 +2121,7 @@ const kv=(k,v)=>{if(!v)return;const kw=150,ks=quebra(k,F2,8.5,kw-10),ls=quebra(v
 nova();
 pg.drawRectangle({x:0,y:H-78,width:W,height:78,color:verde});
 const _br=await brasaoPDF(pdf),_tx=_br?desenhaBrasao(pg,P,_br,M,H-39,58):M;pg.drawText('SICAM',{x:_tx,y:H-40,size:22,font:F2,color:P.rgb(1,1,1)});
-pg.drawText(winAnsi('Sistema Integrado de Cautela de Armamento e Munição – Furrielação APMG'),{x:_tx,y:H-58,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
+pg.drawText(winAnsi('Sistema Integrado de Cautela de Materiais – Furrielação APMG'),{x:_tx,y:H-58,size:10,font:F1,color:P.rgb(0.9,0.93,0.88)});
 y=H-96;
 texto(titulo,{f:F2,s:14});y-=2;
 texto(`Gerado em ${fmtC(nowISO())} por ${nomeM(sess.userId)} · ${lista.length} cautela(s)`,{s:9,c:cinza});y-=8;
@@ -2057,6 +2202,12 @@ ver:el=>verReserva(el.dataset.id),
 cancelar:el=>cancelar(el.dataset.id),
 aprovar:el=>aprovar(el.dataset.id), recusar:el=>recusar(el.dataset.id), separar:el=>separar(el.dataset.id),
 cautelar:el=>cautelar(el.dataset.id), devolver:el=>devolver(el.dataset.id),
+balcao:()=>abrirBalcao(),
+balAdd:()=>{lerCamposBalcao();balAdd();},
+balRm:el=>{ui.bal.itens=ui.bal.itens.filter(i=>i.tipoId!==el.dataset.t);$('#bal-itens').innerHTML=htmlBalItens();},
+balVoltar:()=>{ui.sep=null;if(ui.bal)desenharBalcao();else closeModal();},
+balAssAqui:async el=>{el.disabled=true;const r=await esperarReserva(el.dataset.id);el.disabled=false;if(!r){toast('A cautela ainda está sendo carregada. Abra-a em Solicitações → Prontas e toque em "Assinar no balcão".',true);return;}cautelar(r.id);},
+balAssCel:el=>{const r=R(el.dataset.id);closeModal();ui.view='solic';render();toast(`${r?nr(r.num)+' já aparece':'A cautela já aparece'} no celular de ${r?nomeM(r.userId):'militar'} para assinar. Depois, confirme a entrega.`);},
 novoTipo, novoUser,
 editTipo:el=>editTipo(el.dataset.id),
 delTipo:async el=>{const id=el.dataset.id,t=tipo(id);const us=(await getDocs(query(collection(db,'unidades'),where('tipoId','==',id)))).docs.map(d=>({id:d.id,...d.data()}));
@@ -2143,6 +2294,7 @@ bootstrapping=false;await aoMudarLogin(auth.currentUser);
 'f-sol':fd=>enviarSolicitacao(fd),
 'f-rec':async(fd,f)=>{const r=R(f.dataset.id);await updateDoc(doc(db,'reservas',r.id),{status:'recusada',log:[...r.log,entrada('Recusada',String(fd.get('m')).trim())]});closeModal();toast(`${nr(r.num)} recusada.`);},
 'f-sep':(fd,f)=>confirmarSeparacao(f),
+'f-bal':fd=>continuarBalcao(fd),
 'f-trf':(fd,f)=>confirmarTransf(f,fd),
 'f-cancf':(fd,f)=>confirmarCancelF(f,fd),
 'f-ass':fd=>assinarComSenha(fd),
@@ -2253,10 +2405,13 @@ if(k==='mun'){const t=tipo(e.target.dataset.id),lim=t.limite||100;let v=parseInt
 if(v>0&&!ui.cart[t.id]&&contagem(t.id).livre<=0)v=0;ui.cart[t.id]=v;render();}
 });
 
-document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='sep-q'){e.preventDefault();sepEnter(e.target);}});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='sep-q'){e.preventDefault();sepEnter(e.target);}
+if(e.key==='Enter'&&e.target.id==='bal-qtd'){e.preventDefault();lerCamposBalcao();balAdd();}
+if(e.key==='Enter'&&e.target.dataset&&e.target.dataset.inp==='balq'){e.preventDefault();const s=$('#bal-mil');if(s)s.focus();}});
 document.addEventListener('input',e=>{
 if(e.target.id==='sep-q'){$('#sep-erro').textContent='';sepDigitou(e.target.value);return;}
 if(e.target.closest&&e.target.closest('#f-sep .lotes')){sepContar();return;}
+if(e.target.dataset&&e.target.dataset.inp==='balq'&&ui.bal){const s=$('#bal-mil');if(s&&s.value)ui.bal.userId=s.value;ui.bal.q=e.target.value;if(s)s.innerHTML=opcoesMil(ui.bal.q,ui.bal.userId);return;}
 if(e.target.dataset&&e.target.dataset.inpmun){const b=e.target.closest('.dev-mun'),q=+b.dataset.q,d=parseInt(e.target.value,10)||0,c=b.querySelector('.calc');const bad=d<0||d>q;
 c.textContent=bad?`A sobra não pode passar de ${q} cartuchos.`:d?`Utilizados: ${q-d} · sobra devolvida: ${d}`:`Sem sobra: ${q} cartuchos utilizados.`;c.classList.toggle('bad',bad);return;}
 if(e.target.dataset&&e.target.dataset.inp==='mq'){ui.mq=e.target.value;ui.mqRes='';const box=$('#mat-res');if(box){if(!ui.mq.trim()){const tmp=document.createElement('div');tmp.innerHTML=vMaterial();box.replaceWith(tmp.querySelector('#mat-res'));}else box.innerHTML='<p class="small muted">Buscando…</p>';}matBuscar();return;}
@@ -2421,7 +2576,7 @@ async function aoMudarLogin(u){
 if(bootstrapping)return;
 pararEscutas();closeModal();if(aguardandoUnsub){aguardandoUnsub();aguardandoUnsub=null;}
 try{
-if(!u){sess=null;D=D0();const f=(await setupFeito())?'login':'setup';fase=((fase==='cadastro'||fase==='cadastroF')&&f==='login')?fase:f;document.title='SICAM – Sistema Integrado de Cautela de Armamento e Munição';render();return;}
+if(!u){sess=null;D=D0();const f=(await setupFeito())?'login':'setup';fase=((fase==='cadastro'||fase==='cadastroF')&&f==='login')?fase:f;document.title='SICAM – Sistema Integrado de Cautela de Materiais';render();return;}
 if(!ehLegado(u.email)&&!u.emailVerified){fase='verificar';render();return;}
 fase='carregando';render();
 const s=await getDoc(doc(db,'users',u.uid));
@@ -2447,7 +2602,7 @@ let ocultoEm=0;
 document.addEventListener('visibilitychange',()=>{if(document.hidden){ocultoEm=Date.now();return;}
 if(sess&&fase==='app'&&!ui.bloqueado&&ocultoEm&&Date.now()-ocultoEm>5*60e3){const u=me();if(u&&podeBloquear(u.id)&&bloqueioLigado(u.id,u.perfil)){ui.bloqueado=true;try{if(modal.open)closeModal();}catch(e){}render();}}});
 function vBloqueio(){const u=me()||{};
-return `<main class="login"><div class="login-card"><div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Armamento e Munição</p><p>${esc(nomeM(u.id))}</p></div></div>
+return `<main class="login"><div class="login-card"><div class="brand">${SEAL}<div><h1>SICAM</h1><p class="nome-ext">Sistema Integrado de Cautela de Materiais</p><p>${esc(nomeM(u.id))}</p></div></div>
 <p class="aviso" style="margin-bottom:1rem">🔒 O SICAM está bloqueado neste aparelho. Use a digital, o Face ID ou a senha do celular para continuar.</p>
 <p class="erro" id="bloq-erro"></p>
 <button class="btn btn-pri btn-block" data-act="desbloquear">👆 Desbloquear</button>
