@@ -3,7 +3,7 @@ import { getAuth, initializeAuth, inMemoryPersistence, onAuthStateChanged, signI
 signOut, reauthenticateWithCredential, EmailAuthProvider, updatePassword, sendEmailVerification, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, onSnapshot, writeBatch, runTransaction, query, where, limit, getCountFromServer } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import * as CFG from './config.js';
-const VERSAO='5.11.0';
+const VERSAO='5.11.1';
 const SICAM_FIREBASE=CFG.SICAM_FIREBASE;
 const DOMINIOS=((CFG.SICAM_OPCOES&&CFG.SICAM_OPCOES.dominios)||['pm.pr.gov.br']).map(d=>d.toLowerCase());
 /* ============ Estado ============ */
@@ -174,8 +174,9 @@ tr.cat-row td{background:var(--surface-2);font-weight:600;font-size:.82rem;color
 .bal-lista{list-style:none;padding:0;margin:.3rem 0 0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .bal-lista li{display:flex;align-items:center;gap:.5rem;padding:.5rem .65rem;border-bottom:1px solid var(--line);background:var(--surface)}
 .bal-lista li:last-child{border-bottom:0}.bal-lista .nm{flex:1}
-.bal-add{display:grid;grid-template-columns:1fr 90px auto;gap:.5rem;align-items:end}
-@media (max-width:480px){.bal-add{grid-template-columns:1fr 80px}.bal-add .btn{grid-column:1/-1}}
+.bal-mun{display:grid;grid-template-columns:1fr 1fr 90px auto;gap:.5rem;align-items:center}
+@media (max-width:560px){.bal-mun{grid-template-columns:1fr 1fr}.bal-mun .btn{grid-column:auto}}
+#f-bal .busca{position:static}
 .bal-conf{border:1px solid var(--brass);border-radius:8px;padding:.5rem .65rem;margin-top:.4rem;font-size:.85rem;background:color-mix(in srgb,var(--gold) 10%,var(--surface))}
 .bal-conf ul{margin:.3rem 0 0;padding-left:1.1rem}
 .bal-opc{display:grid;gap:.6rem;margin-top:.8rem}
@@ -1188,28 +1189,26 @@ openModal('Recusar '+nr(r.num),`<form id="f-rec" data-id="${r.id}" class="stack"
 <button class="btn btn-warn btn-block">Recusar solicitação</button></form>`);
 }
 /* ====== Separação: o Furriel digita o nº de série, o patrimônio ou o nome e escolhe na lista ====== */
-/* A separação serve a um pedido já existente (rid) ou a uma cautela no balcão ainda não gravada (virt) */
-const sepR=()=>ui.sep?(ui.sep.virt||R(ui.sep.rid)):null;
+const sepR=()=>ui.sep?R(ui.sep.rid):null;
 function separar(id){
 const r=R(id);if(!r)return;if(r.status!=='aprovada'){toast('Esta solicitação não está mais aguardando separação.',true);return;}
 ui.sep={rid:id,sel:{},res:[],seq:0};
 abrirSeparacao(r);
 }
 function abrirSeparacao(r){
-const virt=!!ui.sep.virt;
 let lotes='';
 for(const i of r.itens.filter(i=>isMun(i.tipoId))){const tn=tipo(i.tipoId).nome,ls=lotesDe(i.tipoId).filter(l=>l.qtd>0);
 lotes+=`<div class="sep-item"><div class="top"><b>${esc(tn)}</b><span class="cnt" data-cntm="${i.tipoId}">0 de ${i.qtd} cart.</span></div>
 <div class="lotes" data-mun="${i.tipoId}" data-q="${i.qtd}">${ls.map(l=>`<label class="lote-row" data-s="${esc(normTxt('lote '+l.lote+' '+tn))}" data-lote="${esc(normTxt(l.lote))}"><span><span class="mono">Lote ${esc(l.lote)}</span><span class="ser">${l.qtd} cart. em estoque</span></span>
 <input class="i" type="number" inputmode="numeric" min="0" max="${Math.min(l.qtd,i.qtd)}" step="1" data-lid="${l.id}" data-max="${l.qtd}" placeholder="0" aria-label="Cartuchos do lote ${esc(l.lote)}"></label>`).join('')||'<p class="c-stamp small">Sem estoque deste calibre.</p>'}</div></div>`;}
-openModal(virt?'Cautela no balcão – separar material':'Separar material – '+nr(r.num),`<form id="f-sep" data-id="${r.id||''}">
+openModal('Separar material – '+nr(r.num),`<form id="f-sep" data-id="${r.id}">
 <div class="busca sep-busca"><label class="sep-lbl" for="sep-q">🔎 Digite o nº de série, o nº de patrimônio ou o nome do material</label>
 <input class="i" type="search" id="sep-q" placeholder="Ex.: 2405512, HT-003 ou capa de chuva" autocomplete="off" autocapitalize="off" enterkeyhint="search" aria-label="Pesquisar material">
 <div id="sep-res"></div></div>
 <div class="row between" style="margin-top:.8rem"><h3>Itens do pedido</h3><button type="button" class="link" data-act="sepAuto">Preencher automaticamente</button></div>
 <div id="sep-itens">${r.itens.filter(i=>!isMun(i.tipoId)).map(htmlSepTipo).join('')}</div>${lotes}
-<p class="small muted">${virt?'Se não houver o suficiente, separe o que existe: a cautela registra só o que foi entregue.':'Se não houver o suficiente, separe o que existe: a solicitação fica registrada como atendida parcialmente.'}</p>
-<p class="erro" id="sep-erro"></p>${virt?'<div class="row" style="gap:.5rem"><button type="button" class="btn" data-act="balVoltar">← Voltar</button><button class="btn btn-pri" style="flex:1">Confirmar separação</button></div>':'<button class="btn btn-pri btn-block">Confirmar separação</button>'}</form>`,'',esc(nomeM(r.userId))+(virt?' · cautela no balcão'+(r.balcao&&r.balcao.motivo?' · '+esc(r.balcao.motivo):''):' · retirada '+fmt(r.retirada)));
+<p class="small muted">Se não houver o suficiente, separe o que existe: a solicitação fica registrada como atendida parcialmente.</p>
+<p class="erro" id="sep-erro"></p><button class="btn btn-pri btn-block">Confirmar separação</button></form>`,'',esc(nomeM(r.userId))+' · retirada '+fmt(r.retirada));
 const q=$('#sep-q');if(q)q.focus();
 }
 function htmlSepTipo(i){
@@ -1307,8 +1306,7 @@ if(tot>q){err(`${tn}: foram pedidos ${q} cartuchos; você informou ${tot}.`);ret
 if(tot<q)parcial=true;if(tot)novos.push({tipoId:g.dataset.mun,qtd:tot});
 }
 if(r.itens.some(i=>isMun(i.tipoId))&&!form.querySelectorAll('.lotes').length)parcial=true;
-if(!sel.length&&!mun.length){err(ui.sep.virt?'Separe ao menos uma unidade ou informe a munição.':'Separe ao menos uma unidade ou informe a munição. Se não houver nada disponível, recuse a solicitação.');return;}
-if(ui.sep.virt){await gravarCautelaBalcao(r,{sel,mun,uinfo,novos,parcial});return;}
+if(!sel.length&&!mun.length){err('Separe ao menos uma unidade ou informe a munição. Se não houver nada disponível, recuse a solicitação.');return;}
 const upd={status:'separada',unidades:sel,municao:mun,uinfo,log:[...r.log,entrada('Separada',parcial?'Atendida parcialmente':'')]};
 if(parcial){upd.itensSol=r.itens;upd.itens=novos;}
 try{
@@ -1329,10 +1327,10 @@ ui.sep=null;closeModal();toast(parcial?`${nr(r.num)} separada parcialmente. O mi
 }
 /* ============ Cautela no balcão ============
    Para o militar que chega à Furrielação com pressa (ex.: recebeu ordem para cautelar na hora).
-   O Furriel escolhe o militar e o material, separa as unidades e a cautela nasce já "pronta para retirada".
-   O militar assina no próprio celular ou, se preferir/estiver sem celular, com a senha dele no aparelho da Furrielação. */
+   Tela única: o Furriel escolhe o militar e vai adicionando cada unidade pelo nº de série, patrimônio ou nome
+   (e a munição por calibre e lote). A cautela nasce já "pronta para retirada".
+   O militar assina no próprio celular ou com a senha dele no aparelho da Furrielação. */
 const MOTIVOS_BALCAO=['Ordem do oficial de dia','Serviço / escala','Instrução','Missão / ocorrência','Outro'];
-const FINALIDADES=['Instrução','Serviço','Policiamento / operação','Formatura / solenidade','Outra'];
 const militaresBalcao=()=>D.users.filter(x=>x.ativo&&!x.pendente&&x.id!==sess.userId).sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'));
 function opcoesMil(q,selId){
 const nq=normTxt(q),todos=militaresBalcao();
@@ -1340,74 +1338,141 @@ const l=nq?todos.filter(x=>normTxt([x.grad,x.nome,x.login,x.pelotao,x.email].joi
 const sel=selId&&l.some(x=>x.id===selId)?selId:(l.length===1?l[0].id:'');
 return `<option value="">${l.length?`Selecione o militar… (${l.length} encontrado${l.length>1?'s':''})`:'Nenhum militar encontrado'}</option>`+l.slice(0,300).map(x=>`<option value="${x.id}" ${x.id===sel?'selected':''}>${esc(nomeM(x.id))}${x.pelotao?' – '+esc(x.pelotao):''}${x.login?' · '+esc(x.login):''}</option>`).join('');
 }
-function opcoesTipoBalcao(){
-const ts=ordTipos(D.tipos);const cats=[...new Set(ts.map(catOf))];
-return '<option value="">Escolha o material…</option>'+cats.map(c=>`<optgroup label="${esc(c)}">${ts.filter(t=>catOf(t)===c).map(t=>{const k=contagem(t.id);
-return `<option value="${t.id}">${esc(t.nome)} – ${t.mun?k.disponivel+' cart. em estoque':(contagemPronta?k.disponivel+' disponível(is)':'…')}</option>`;}).join('')}</optgroup>`).join('');
-}
-/* Avisa quando entregar no balcão deixa faltando material para pedidos já feitos pelo app */
+/* Itens da cautela, por tipo (para contagem, conflitos e gravação) */
+const balItens=()=>{const m={};(ui.bal.unids||[]).forEach(u=>m[u.tipoId]=(m[u.tipoId]||0)+1);(ui.bal.mun||[]).forEach(x=>m[x.tipoId]=(m[x.tipoId]||0)+x.qtd);return Object.entries(m).map(([tipoId,qtd])=>({tipoId,qtd}));};
+/* Avisa quando a cautela no balcão vai deixar faltando material para pedidos já feitos pelo app */
 function conflitosBalcao(){
-return (ui.bal.itens||[]).map(i=>{const t=tipo(i.tipoId),k=contagem(i.tipoId),un=t.mun?' cart.':'';
-if(i.qtd>k.disponivel)return `<div class="bal-conf"><b>⚠ ${esc(t.nome)}:</b> há só ${k.disponivel}${un} disponível(is) agora. Na separação, entregue o que houver.</div>`;
-if(i.qtd>k.livre){const rs=D.reservas.filter(r=>['pendente','aprovada'].includes(r.status)&&(r.itens||[]).some(x=>x.tipoId===i.tipoId)).sort((a,b)=>String(a.retirada).localeCompare(String(b.retirada)));
-return `<div class="bal-conf"><b>⚠ ${esc(t.nome)}:</b> entregar ${i.qtd}${un} aqui vai deixar faltando para pedido(s) já feito(s) pelo app:<ul>${rs.map(r=>`<li>${nr(r.num)} · ${esc(nomeM(r.userId))} · retirada ${fmt(r.retirada)} (${(r.itens.find(x=>x.tipoId===i.tipoId)||{}).qtd||0}${un})</li>`).join('')}</ul>Você pode entregar mesmo assim, mas esses pedidos poderão ser atendidos só parcialmente.</div>`;}
-return '';}).join('');
+return balItens().map(i=>{const t=tipo(i.tipoId),k=contagem(i.tipoId),un=t.mun?' cart.':'';
+// as unidades escolhidas ainda constam como disponíveis até a gravação; a sobra livre é o que fica para os pedidos
+if(i.qtd<=k.livre)return '';
+const rs=D.reservas.filter(r=>['pendente','aprovada'].includes(r.status)&&(r.itens||[]).some(x=>x.tipoId===i.tipoId)).sort((a,b)=>String(a.retirada).localeCompare(String(b.retirada)));
+if(!rs.length)return '';
+return `<div class="bal-conf"><b>⚠ ${esc(t.nome)}:</b> entregar ${i.qtd}${un} aqui vai deixar faltando para pedido(s) já feito(s) pelo app:<ul>${rs.map(r=>`<li>${nr(r.num)} · ${esc(nomeM(r.userId))} · retirada ${fmt(r.retirada)} (${(r.itens.find(x=>x.tipoId===i.tipoId)||{}).qtd||0}${un})</li>`).join('')}</ul>Você pode entregar mesmo assim, mas esses pedidos poderão ser atendidos só parcialmente.</div>`;}).join('');
 }
 function htmlBalItens(){
-const l=ui.bal.itens||[];
-return (l.length?`<ul class="bal-lista">${l.map(i=>`<li><span class="nm"><b>${i.qtd}${isMun(i.tipoId)?' cart.':'×'}</b> ${esc(tipo(i.tipoId).nome)}</span><button type="button" class="mini rm" data-act="balRm" data-t="${i.tipoId}" aria-label="Remover ${esc(tipo(i.tipoId).nome)}">✕</button></li>`).join('')}</ul>`
-:'<p class="small muted">Nenhum material adicionado ainda.</p>')+conflitosBalcao();
+const us=ui.bal.unids||[],mun=ui.bal.mun||[];
+if(!us.length&&!mun.length)return '<p class="small muted">Nada adicionado ainda. Pesquise acima e toque em <b>Adicionar</b> em cada item.</p>';
+const tids=[...new Set(us.map(u=>u.tipoId))];
+let h=tids.map(tid=>{const l=us.filter(u=>u.tipoId===tid);return `<div class="sep-item ok"><div class="top"><b>${esc(tipo(tid).nome)}</b><span class="cnt full">${l.length}</span></div>
+<div class="chips-sel">${l.map(u=>`<span class="chip-sel"><span class="mono">${esc(u.pat)}</span>${u.serie?`<span class="small">série ${esc(u.serie)}</span>`:''}<button type="button" data-act="balRmU" data-id="${u.id}" aria-label="Remover ${esc(u.pat)}">✕</button></span>`).join('')}</div></div>`;}).join('');
+h+=mun.map((x,k)=>`<div class="sep-item ok"><div class="top"><span><b>${x.qtd} cart.</b> ${esc(tipo(x.tipoId).nome)} <span class="small muted">· lote ${esc(x.lote)}</span></span><button type="button" class="mini rm" data-act="balRmM" data-k="${k}" aria-label="Remover munição">✕</button></div></div>`).join('');
+const n=us.length,c=mun.reduce((a,x)=>a+x.qtd,0);
+return `<p class="small muted" style="margin:0 0 .3rem">${n?`${n} unidade(s)`:''}${n&&c?' e ':''}${c?`${c} cartucho(s)`:''} na cautela.</p>`+h+conflitosBalcao();
+}
+const opcoesCalibre=()=>'<option value="">Calibre…</option>'+ordTipos(D.tipos.filter(t=>t.mun)).map(t=>`<option value="${t.id}">${esc(t.nome)}</option>`).join('');
+function opcoesLote(tid){
+if(!tid)return '<option value="">Lote…</option>';
+const ls=lotesDe(tid).filter(l=>l.qtd>0);
+return ls.length?ls.map(l=>{const usado=(ui.bal.mun||[]).filter(x=>x.loteId===l.id).reduce((a,x)=>a+x.qtd,0);return `<option value="${l.id}">Lote ${esc(l.lote)} – ${l.qtd-usado} cart.</option>`;}).join(''):'<option value="">Sem estoque</option>';
 }
 function abrirBalcao(){
 const d=new Date(Date.now()+12*3600e3);d.setMinutes(0,0,0);
-ui.bal={itens:[],q:'',dev:toLocalInput(d),fin:'Serviço',mot:MOTIVOS_BALCAO[0],obs:''};ui.sep=null;
+ui.bal={unids:[],mun:[],q:'',dev:toLocalInput(d),fin:'Serviço',mot:MOTIVOS_BALCAO[0],obs:'',seq:0,res:[]};ui.sep=null;
 desenharBalcao();
 }
 function desenharBalcao(){
-const b=ui.bal;
+const b=ui.bal,temMun=D.tipos.some(t=>t.mun);
 openModal('Nova cautela no balcão',`<form id="f-bal" class="stack" autocomplete="off">
 <p class="small muted" style="margin:0">Para o militar que está no balcão e precisa do material na hora. A cautela não passa pela fila de pedidos.</p>
 <div><label class="f"><span>Militar</span><input class="i" type="search" data-inp="balq" value="${esc(b.q)}" placeholder="Filtrar por nome, nº de aluno ou pelotão" autocapitalize="off"></label>
 <select class="i" name="mil" id="bal-mil" style="margin-top:.4rem" required aria-label="Militar">${opcoesMil(b.q,b.userId)}</select></div>
-<div><div class="bal-add"><label class="f"><span>Material</span><select class="i" id="bal-tipo" aria-label="Material">${opcoesTipoBalcao()}</select></label>
-<label class="f"><span>Qtd.</span><input class="i" type="number" id="bal-qtd" min="1" step="1" value="1" inputmode="numeric" aria-label="Quantidade"></label>
-<button type="button" class="btn" data-act="balAdd">+ Adicionar</button></div>
-<div id="bal-itens" style="margin-top:.5rem">${htmlBalItens()}</div></div>
+<div class="busca sep-busca"><label class="sep-lbl" for="bal-busca">🔎 Digite o nº de série, o nº de patrimônio ou o nome do material</label>
+<input class="i" type="search" id="bal-busca" placeholder="Ex.: 2405512, HT-003 ou rádio" autocomplete="off" autocapitalize="off" enterkeyhint="search" aria-label="Pesquisar material">
+<div id="bal-res"></div></div>
+${temMun?`<div><span class="sep-lbl">Munição</span><div class="bal-mun"><select class="i" id="bal-cal" aria-label="Calibre">${opcoesCalibre()}</select><select class="i" id="bal-lote" aria-label="Lote">${opcoesLote('')}</select>
+<input class="i" type="number" id="bal-mq" min="1" step="1" inputmode="numeric" placeholder="Cart." aria-label="Cartuchos"><button type="button" class="btn" data-act="balAddMun">+ Adicionar</button></div></div>`:''}
+<div><h3 style="margin:.2rem 0 .4rem">Material da cautela</h3><div id="bal-itens">${htmlBalItens()}</div></div>
 <div class="grid2"><label class="f"><span>Devolução prevista</span><input class="i" type="datetime-local" name="dev" value="${esc(b.dev)}" required></label>
-<label class="f"><span>Finalidade</span><select class="i" name="fin">${FINALIDADES.map(x=>`<option ${x===b.fin?'selected':''}>${x}</option>`).join('')}</select></label></div>
+<label class="f"><span>Finalidade</span><select class="i" name="fin">${['Instrução','Serviço','Policiamento / operação','Formatura / solenidade','Outra'].map(x=>`<option ${x===b.fin?'selected':''}>${x}</option>`).join('')}</select></label></div>
 <label class="f"><span>Motivo da cautela imediata</span><select class="i" name="mot">${MOTIVOS_BALCAO.map(x=>`<option ${x===b.mot?'selected':''}>${x}</option>`).join('')}</select></label>
 <label class="f"><span>Observação (obrigatória se "Outro")</span><textarea class="i" name="obs" placeholder="Ex.: ordem do Ten. Fulano para o policiamento do evento">${esc(b.obs)}</textarea></label>
 <p class="erro" id="bal-erro"></p>
-<button class="btn btn-pri btn-block">Continuar: separar o material</button></form>`,'','Fica registrada no histórico e no relatório do plantão como "Cautela no balcão".');
+<button class="btn btn-pri btn-block">Registrar e seguir para a assinatura</button></form>`,'','Fica registrada no histórico e no relatório do plantão como "Cautela no balcão".');
+const q=$('#bal-busca');if(q&&b.userId)q.focus();
 }
-function balAdd(){
-const tid=($('#bal-tipo')||{}).value,q=parseInt(($('#bal-qtd')||{}).value,10),err=m=>{$('#bal-erro').textContent=m;};
-if(!tid){err('Escolha o material.');return;}
-if(!Number.isInteger(q)||q<1){err('Informe a quantidade.');return;}
-const t=tipo(tid),max=t.mun?(t.limite||100)*5:50;
-const ex=ui.bal.itens.find(i=>i.tipoId===tid),novo=(ex?ex.qtd:0)+q;
-if(novo>max){err(`${t.nome}: no máximo ${max}${t.mun?' cartuchos':''} por cautela.`);return;}
-if(ex)ex.qtd=novo;else ui.bal.itens.push({tipoId:tid,qtd:q});
-err('');$('#bal-itens').innerHTML=htmlBalItens();$('#bal-tipo').value='';$('#bal-qtd').value='1';
+const balErr=m=>{const e=$('#bal-erro');if(e)e.textContent=m;};
+const balAtualizar=()=>{const el=$('#bal-itens');if(el)el.innerHTML=htmlBalItens();};
+function balPodeAdd(u){
+if((ui.bal.unids||[]).some(x=>x.id===u.id))return 'adicionado';
+if(u.status!=='disponivel'){const rr=comQuem(u.id);return `${(USTAT[u.status]||[u.status])[0]}${rr?' com '+nomeM(rr.userId):''}.`;}
+return '';
+}
+function balAdd(u,silencio){
+const m=balPodeAdd(u);if(m){if(!silencio)balErr(m==='adicionado'?`${u.pat} já está na cautela.`:`${u.pat}: ${m}`);return false;}
+if((ui.bal.unids||[]).length>=50){balErr('No máximo 50 unidades por cautela.');return false;}
+ui.bal.unids.push({id:u.id,pat:u.pat,serie:u.serie||'',tipoId:u.tipoId});balErr('');balAtualizar();return true;
+}
+async function balDisponiveis(tid,n){
+const ja=(ui.bal.unids||[]).map(x=>x.id);
+const sn=await getDocs(query(collection(db,'unidades'),where('tipoId','==',tid),where('status','==','disponivel'),limit(n+ja.length)));
+return guardarU(sn.docs.map(d=>({id:d.id,...d.data()}))).filter(u=>!ja.includes(u.id)).sort((a,b)=>String(a.pat).localeCompare(String(b.pat),'pt-BR',{numeric:true}));
+}
+async function balProx(tid){
+try{const l=await balDisponiveis(tid,1);if(!l.length){balErr(`Não há mais ${tipo(tid).nome} disponível.`);return;}if(balAdd(l[0]))toast(`${l[0].pat} adicionado.`);}
+catch(e){balErr(erroFirebase(e));}
+}
+async function balListar(tid){
+const box=$('#bal-res');if(!box)return;box.innerHTML='<p class="small muted">Carregando…</p>';
+try{const l=await balDisponiveis(tid,20);
+box.innerHTML=l.length?`<p class="small muted" style="margin:.4rem 0 .2rem">${esc(tipo(tid).nome)} disponíveis${l.length===20?' (primeiros 20 – digite o número para achar outro)':''}:</p><ul class="sep-res">${l.map(u=>`<li><span><span class="mono">${esc(u.pat)}</span>${u.serie?` <span class="small muted">· série ${esc(u.serie)}</span>`:''}</span><button type="button" class="btn btn-sm btn-pri" data-act="balAddU" data-id="${u.id}">Adicionar</button></li>`).join('')}</ul>`
+:`<p class="small c-stamp">Não há ${esc(tipo(tid).nome)} disponível.</p>`;}
+catch(e){box.innerHTML=`<p class="erro">${esc(erroFirebase(e))}</p>`;}
+}
+let balTimer=null;
+function balDigitou(v){clearTimeout(balTimer);balTimer=setTimeout(()=>balBuscar(v),300);}
+async function balBuscar(txt){
+const box=$('#bal-res');if(!box||!ui.bal)return;const q=String(txt||'').trim();const seq=++ui.bal.seq;
+if(!q){box.innerHTML='';ui.bal.res=[];return;}
+const nq=normTxt(q);
+const porNome=nq.length>=2?ordTipos(D.tipos.filter(t=>normTxt(t.nome+' '+(t.desc||'')).includes(nq))).slice(0,8):[];
+let us=[];if(q.length>=2){box.innerHTML=box.innerHTML||'<p class="small muted">Pesquisando…</p>';try{us=await buscarUnidades(q,15);}catch(e){}}
+if(seq!==ui.bal.seq)return;
+ui.bal.res=us;
+let h=us.map(u=>{const m=balPodeAdd(u);return `<li><span><span class="mono">${esc(u.pat)}</span>${u.serie?` <span class="small muted">· série ${esc(u.serie)}</span>`:''}<br><span class="small">${esc(tipo(u.tipoId).nome)}</span></span>
+${m===''?`<button type="button" class="btn btn-sm btn-pri" data-act="balAddU" data-id="${u.id}">Adicionar</button>`:m==='adicionado'?'<span class="small c-ok">Na cautela ✓</span>':`<span class="small c-stamp">${esc(m)}</span>`}</li>`;}).join('');
+h+=porNome.map(t=>t.mun?`<li><span><b>${esc(t.nome)}</b><br><span class="small muted">munição · ${contagem(t.id).disponivel} cart. em estoque</span></span><button type="button" class="btn btn-sm" data-act="balCal" data-t="${t.id}">Informar cartuchos</button></li>`
+:`<li><span><b>${esc(t.nome)}</b><br><span class="small muted">${contagemPronta?contagem(t.id).disponivel+' disponível(is)':''}</span></span><span class="row"><button type="button" class="btn btn-sm" data-act="balListar" data-t="${t.id}">Ver disponíveis</button><button type="button" class="btn btn-sm btn-pri" data-act="balProx" data-t="${t.id}">+ Próximo</button></span></li>`).join('');
+box.innerHTML=h?`<ul class="sep-res">${h}</ul>`:`<p class="small muted" style="margin-top:.4rem">${q.length<2?'Continue digitando…':'Nada encontrado. Confira o número ou digite o nome do material.'}</p>`;
+}
+/* Enter na pesquisa: se o número bater exatamente com uma unidade disponível (ou houver uma só), já adiciona */
+async function balEnter(inp){
+const q=String(inp.value||'').trim();if(!q)return;
+await balBuscar(q);const nq=normTxt(q);
+const us=(ui.bal.res||[]).filter(u=>balPodeAdd(u)==='');
+const alvo=us.find(u=>normTxt(u.pat)===nq||normTxt(u.serie||'')===nq)||(us.length===1?us[0]:null);
+if(alvo){if(balAdd(alvo)){inp.value='';$('#bal-res').innerHTML='';toast(`${alvo.pat} adicionado.`);}return;}
+const semOk=(ui.bal.res||[]).find(u=>normTxt(u.pat)===nq||normTxt(u.serie||'')===nq);
+balErr(semOk?`${semOk.pat}: ${balPodeAdd(semOk)==='adicionado'?'já está na cautela.':balPodeAdd(semOk)}`:us.length>1?'Mais de um item corresponde. Toque em "Adicionar" no item certo.':'');
+}
+function balAddMun(){
+const tid=($('#bal-cal')||{}).value,lid=($('#bal-lote')||{}).value,q=parseInt(($('#bal-mq')||{}).value,10);
+if(!tid){balErr('Escolha o calibre.');return;}
+const l=loteDe(lid);if(!l){balErr('Escolha o lote.');return;}
+if(!Number.isInteger(q)||q<1){balErr('Informe quantos cartuchos.');return;}
+const usado=(ui.bal.mun||[]).filter(x=>x.loteId===lid).reduce((a,x)=>a+x.qtd,0);
+if(q>l.qtd-usado){balErr(`O lote ${l.lote} tem ${l.qtd-usado} cartucho(s) disponível(is).`);return;}
+const ex=ui.bal.mun.find(x=>x.loteId===lid);if(ex)ex.qtd+=q;else ui.bal.mun.push({tipoId:tid,loteId:lid,lote:l.lote,qtd:q});
+balErr('');balAtualizar();$('#bal-mq').value='';$('#bal-lote').innerHTML=opcoesLote(tid);
 }
 function lerCamposBalcao(){
 const f=$('#f-bal');if(!f||!ui.bal)return;const fd=new FormData(f);
 Object.assign(ui.bal,{userId:fd.get('mil')||ui.bal.userId,dev:fd.get('dev')||ui.bal.dev,fin:fd.get('fin'),mot:fd.get('mot'),obs:String(fd.get('obs')||'')});
 }
-function continuarBalcao(fd){
-const err=m=>{$('#bal-erro').textContent=m;};lerCamposBalcao();
+async function continuarBalcao(fd){
+lerCamposBalcao();
 const u=D.users.find(x=>x.id===fd.get('mil'));
-if(!u){err('Selecione o militar.');return;}
-if(!ui.bal.itens.length){err('Adicione ao menos um material.');return;}
-const dev=new Date(fd.get('dev'));if(isNaN(dev)||dev<=new Date()){err('A devolução prevista precisa ser depois de agora.');return;}
+if(!u){balErr('Selecione o militar.');return;}
+if(!ui.bal.unids.length&&!ui.bal.mun.length){balErr('Adicione ao menos um item ou a munição.');return;}
+const dev=new Date(fd.get('dev'));if(isNaN(dev)||dev<=new Date()){balErr('A devolução prevista precisa ser depois de agora.');return;}
 const obs=String(fd.get('obs')||'').trim();let mot=fd.get('mot');
-if(mot==='Outro'){if(!obs){err('Descreva o motivo na observação.');return;}mot=obs;}
-const virt={id:'',num:0,userId:u.id,itens:ui.bal.itens.map(i=>({...i})),retirada:nowISO(),devolucao:dev.toISOString(),finalidade:fd.get('fin'),obs:mot===obs?'':obs,log:[],balcao:{motivo:mot}};
-ui.sep={rid:null,virt,sel:{},res:[],seq:0};
-abrirSeparacao(virt);const q=$('#sep-q');if(q)q.focus();
+if(mot==='Outro'){if(!obs){balErr('Descreva o motivo na observação.');return;}mot=obs;}
+const sel=ui.bal.unids.map(x=>x.id),uinfo={};ui.bal.unids.forEach(x=>uinfo[x.id]={pat:x.pat,serie:x.serie,tipoId:x.tipoId});
+const mun=ui.bal.mun.map(x=>({tipoId:x.tipoId,loteId:x.loteId,lote:x.lote,qtd:x.qtd}));
+const r={userId:u.id,devolucao:dev.toISOString(),finalidade:fd.get('fin'),obs:mot===obs?'':obs,balcao:{motivo:mot}};
+await gravarCautelaBalcao(r,{sel,mun,uinfo,novos:balItens(),parcial:false});
 }
 async function gravarCautelaBalcao(r,{sel,mun,uinfo,novos,parcial}){
-const err=m=>{$('#sep-erro').textContent=m;};
+const err=m=>{const el=$('#bal-erro')||$('#sep-erro');if(el)el.textContent=m;};
 const ref=doc(collection(db,'reservas')),em=nowISO(),motivo=r.balcao.motivo||'';let n=0;
 const dados={userId:r.userId,itens:novos,unidades:sel,municao:mun,uinfo,retirada:em,devolucao:r.devolucao,finalidade:r.finalidade,obs:r.obs||'',
 status:'separada',cond:{},criadoEm:em,balcao:{por:sess.userId,em,motivo},
@@ -1429,7 +1494,7 @@ tx.set(ref,{...dados,num:n});
 tx.set(doc(db,'historico',r.userId),{em});
 });
 }catch(e){
-if(e&&e.code==='mudou'){err('Uma das unidades ou o estoque acabou de mudar. Remova o item marcado e escolha outro.');return;}
+if(e&&e.code==='mudou'){err('Uma das unidades ou o estoque de munição acabou de mudar (pode ter sido separado para outro militar). Remova o item e escolha outro.');return;}
 if(e&&e.code==='permission-denied'){err('O servidor não permitiu gravar a cautela no balcão. As regras do Firestore precisam permitir que o Furriel crie cautelas em nome do militar.');return;}
 throw e;}
 ui.sep=null;ui.bal=null;
@@ -2203,9 +2268,13 @@ cancelar:el=>cancelar(el.dataset.id),
 aprovar:el=>aprovar(el.dataset.id), recusar:el=>recusar(el.dataset.id), separar:el=>separar(el.dataset.id),
 cautelar:el=>cautelar(el.dataset.id), devolver:el=>devolver(el.dataset.id),
 balcao:()=>abrirBalcao(),
-balAdd:()=>{lerCamposBalcao();balAdd();},
-balRm:el=>{ui.bal.itens=ui.bal.itens.filter(i=>i.tipoId!==el.dataset.t);$('#bal-itens').innerHTML=htmlBalItens();},
-balVoltar:()=>{ui.sep=null;if(ui.bal)desenharBalcao();else closeModal();},
+balAddU:el=>{const u=cacheU.get(el.dataset.id);if(u&&balAdd(u)){const q=$('#bal-busca');if(q){q.value='';q.focus();}$('#bal-res').innerHTML='';toast(`${u.pat} adicionado.`);}},
+balRmU:el=>{ui.bal.unids=ui.bal.unids.filter(x=>x.id!==el.dataset.id);balAtualizar();const q=$('#bal-busca');if(q&&q.value.trim())balBuscar(q.value);},
+balRmM:el=>{ui.bal.mun.splice(+el.dataset.k,1);balAtualizar();const c=$('#bal-cal');if(c)$('#bal-lote').innerHTML=opcoesLote(c.value);},
+balProx:el=>balProx(el.dataset.t),
+balListar:el=>balListar(el.dataset.t),
+balCal:el=>{const c=$('#bal-cal');if(!c)return;c.value=el.dataset.t;$('#bal-lote').innerHTML=opcoesLote(c.value);$('#bal-res').innerHTML='';const q=$('#bal-busca');if(q)q.value='';$('#bal-mq').focus();},
+balAddMun:()=>balAddMun(),
 balAssAqui:async el=>{el.disabled=true;const r=await esperarReserva(el.dataset.id);el.disabled=false;if(!r){toast('A cautela ainda está sendo carregada. Abra-a em Solicitações → Prontas e toque em "Assinar no balcão".',true);return;}cautelar(r.id);},
 balAssCel:el=>{const r=R(el.dataset.id);closeModal();ui.view='solic';render();toast(`${r?nr(r.num)+' já aparece':'A cautela já aparece'} no celular de ${r?nomeM(r.userId):'militar'} para assinar. Depois, confirme a entrega.`);},
 novoTipo, novoUser,
@@ -2398,6 +2467,7 @@ document.addEventListener('change',async e=>{
 if(e.target.id==='imp-file'&&e.target.files&&e.target.files[0]){previaImportacao(e.target.files[0]);return;}
 if(e.target.dataset&&e.target.dataset.impmap!=null&&ui.imp){const a=ui.imp.abas[+e.target.dataset.impmap];const c=e.target.dataset.campo;if(e.target.value==='')delete a.mapa[c];else{Object.keys(a.mapa).forEach(k=>{if(a.mapa[k]===+e.target.value)delete a.mapa[k];});a.mapa[c]=+e.target.value;}desenharPrevia();return;}
 if(e.target.dataset&&e.target.dataset.impign!=null&&ui.imp){ui.imp.abas[+e.target.dataset.impign].ignorar=e.target.checked;desenharPrevia();return;}
+if(e.target.id==='bal-cal'){$('#bal-lote').innerHTML=opcoesLote(e.target.value);return;}
 const k=e.target.dataset&&e.target.dataset.chg;if(!k)return;
 if(k==='ustat'){try{const u=unid(e.target.dataset.id);ui.aberto=u&&u.tipoId;await updateDoc(doc(db,'unidades',e.target.dataset.id),{status:e.target.value});if(u){recontar([u.tipoId]);carregarUnidTipo(u.tipoId,true);}}catch(err){toast(erroFirebase(err),true);}}
 if(k==='fs'){ui.fs=e.target.value;$('#hist-t').innerHTML=tabHist(histFiltrado());}
@@ -2406,11 +2476,13 @@ if(v>0&&!ui.cart[t.id]&&contagem(t.id).livre<=0)v=0;ui.cart[t.id]=v;render();}
 });
 
 document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.id==='sep-q'){e.preventDefault();sepEnter(e.target);}
-if(e.key==='Enter'&&e.target.id==='bal-qtd'){e.preventDefault();lerCamposBalcao();balAdd();}
+if(e.key==='Enter'&&e.target.id==='bal-busca'){e.preventDefault();balEnter(e.target);}
+if(e.key==='Enter'&&e.target.id==='bal-mq'){e.preventDefault();balAddMun();}
 if(e.key==='Enter'&&e.target.dataset&&e.target.dataset.inp==='balq'){e.preventDefault();const s=$('#bal-mil');if(s)s.focus();}});
 document.addEventListener('input',e=>{
 if(e.target.id==='sep-q'){$('#sep-erro').textContent='';sepDigitou(e.target.value);return;}
 if(e.target.closest&&e.target.closest('#f-sep .lotes')){sepContar();return;}
+if(e.target.id==='bal-busca'){balErr('');balDigitou(e.target.value);return;}
 if(e.target.dataset&&e.target.dataset.inp==='balq'&&ui.bal){const s=$('#bal-mil');if(s&&s.value)ui.bal.userId=s.value;ui.bal.q=e.target.value;if(s)s.innerHTML=opcoesMil(ui.bal.q,ui.bal.userId);return;}
 if(e.target.dataset&&e.target.dataset.inpmun){const b=e.target.closest('.dev-mun'),q=+b.dataset.q,d=parseInt(e.target.value,10)||0,c=b.querySelector('.calc');const bad=d<0||d>q;
 c.textContent=bad?`A sobra não pode passar de ${q} cartuchos.`:d?`Utilizados: ${q-d} · sobra devolvida: ${d}`:`Sem sobra: ${q} cartuchos utilizados.`;c.classList.toggle('bad',bad);return;}
